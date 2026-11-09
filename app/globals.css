@@ -126,3 +126,48 @@
 .sc-validation-clean b{font-size:12px;color:#3e4a5f}.sc-validation-clean span{font-size:9px;color:#8993a5;text-align:center}
 .sc-validation-note{max-width:1100px;margin:13px auto 0;display:flex;align-items:flex-start;gap:7px;color:#929bad;font-size:8px;line-height:1.6}
 @media(max-width:640px){.sc-view-tabs{padding:0 8px}.sc-tab-summary{display:none}.sc-validation-view{padding:16px 10px}.sc-validation-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}.sc-issue{flex-wrap:wrap;gap:8px}.sc-issue-jump{margin-left:auto}.sc-validation-heading h2{font-size:17px}}
+
+
+/* Canvas visual refresh */
+.sc-canvas-section{background:#f3f5fa}
+.sc-canvas{background-image:radial-gradient(ellipse at 50% 0%,rgba(119,108,232,.055),transparent 55%)}
+.sc-canvas .react-flow__pane{cursor:grab}
+.sc-canvas .react-flow__pane:active{cursor:grabbing}
+.sc-canvas .react-flow__edge-path{stroke:#aab3c5;stroke-width:2}
+.sc-canvas .react-flow__edge.selected .react-flow__edge-path{stroke:#7569e8;stroke-width:2.4}
+.sc-canvas .react-flow__edge-textbg{fill:#fff;fill-opacity:.96}
+.sc-canvas .react-flow__edge-text{font-size:8px;font-weight:600}
+.sc-canvas .react-flow__controls{left:14px;bottom:14px;border:1px solid #e1e5ef!important;border-radius:9px!important;box-shadow:0 5px 18px #26324a12!important}
+.sc-canvas .react-flow__minimap{right:12px;bottom:12px;border:1px solid #e1e5ef!important;border-radius:9px!important;box-shadow:0 5px 18px #26324a12!important;overflow:hidden}
+.survey-node{width:252px;min-height:132px;padding:11px 12px 9px;border:1px solid #e1e6f0;border-radius:11px;box-shadow:0 5px 18px rgba(35,47,75,.07);position:relative;transition:transform .16s ease,border-color .16s ease,box-shadow .16s ease}
+.survey-node:hover{transform:translateY(-2px);box-shadow:0 9px 24px rgba(35,47,75,.11)}
+.survey-node.node-selected{border-color:#8176ec;box-shadow:0 0 0 3px rgba(117,105,232,.13),0 8px 22px rgba(35,47,75,.1)}
+.survey-node:before{content:"";position:absolute;left:0;top:10px;bottom:10px;width:3px;border-radius:0 3px 3px 0;background:#6579df}
+.survey-node.node-purple:before{background:#8b72dc}
+.survey-node.node-amber:before{background:#d49a4f}
+.survey-node.node-red:before{background:#d46b78}
+.survey-node.node-green:before{background:#30a17b}
+.survey-node-head{display:flex;align-items:center;gap:7px;margin-bottom:10px}
+.node-symbol{width:23px;height:23px;border-radius:7px;font-size:9px}
+.node-caption{font-size:8px;font-weight:800;letter-spacing:.65px;color:#7b879b}
+.node-index{margin-left:auto;font:8px ui-monospace,SFMono-Regular,monospace;color:#a3adbc;background:#f6f7fa;border:1px solid #edf0f4;border-radius:4px;padding:3px 5px}
+.survey-node-qid{font:800 12px ui-monospace,SFMono-Regular,monospace;letter-spacing:-.2px;color:#5269cf;margin:0 0 4px;overflow-wrap:anywhere}
+.survey-node-title{font-size:10px;line-height:1.5;font-weight:650;color:#303b50;margin:0;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;min-height:15px}
+.survey-node-special{font-size:11px;margin:1px 0 6px}
+.survey-node-tag{font:8px ui-monospace,SFMono-Regular,monospace;color:#9aa4b4;margin-top:6px}
+.node-condition{display:flex;align-items:flex-start;gap:6px;margin-top:9px;padding:7px 8px;background:#f5f2ff;border:1px solid #eee9ff;border-radius:6px;color:#6d60d0;font:8px/1.45 ui-monospace,SFMono-Regular,monospace}
+.node-condition svg{flex:none;margin-top:1px}
+.node-condition span{overflow-wrap:anywhere}
+.survey-node-chips{display:flex;gap:5px;flex-wrap:wrap;margin-top:8px}
+.survey-node-chips span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 6px;border-radius:4px;background:#f3f5f9;color:#788499;font-size:7px;font-weight:650}
+.survey-node-foot{margin-top:10px;padding-top:8px;border-top:1px solid #eef0f5;color:#a0a9b7;font-size:7px;letter-spacing:.35px}
+.survey-node .react-flow__handle{width:8px;height:8px;background:#a0a8bd;border:2px solid white;box-shadow:0 0 0 1px #dfe3ec}
+.node-blue .react-flow__handle{background:#6579df}
+.node-purple .react-flow__handle{background:#8b72dc}
+.node-amber .react-flow__handle{background:#d49a4f}
+.node-red .react-flow__handle{background:#d46b78}
+.node-green .react-flow__handle{background:#30a17b}
+.sc-canvas-toolbar{background:linear-gradient(180deg,#fff,#fcfcfe)}
+.sc-canvas-toolbar b{color:#4e5a70}
+.sc-legend i{width:8px;height:8px;border-radius:3px;box-shadow:0 0 0 2px #f0f1f6}
+@media(max-width:640px){.survey-node{width:230px}.sc-canvas .react-flow__minimap{display:none}}
