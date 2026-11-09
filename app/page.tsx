@@ -8,20 +8,28 @@ import { Activity, AlertTriangle, ArrowDownToLine, Braces, CheckCircle2, Chevron
 
 function SurveyCard({ data, selected }: NodeProps<SurveyNodeData>) {
   const styles = {
-    start: { icon: "▶", color: "green" },
-    question: { icon: "Q", color: "blue" },
-    logic: { icon: "IF", color: "purple" },
-    control: { icon: "◇", color: "amber" },
-    terminate: { icon: "⊘", color: "red" },
-    end: { icon: "✓", color: "green" }
+    start: { icon: "▶", color: "green", caption: "ENTRY" },
+    question: { icon: "Q", color: "blue", caption: "QUESTION" },
+    logic: { icon: "IF", color: "purple", caption: "LOGIC CHECK" },
+    control: { icon: "◇", color: "amber", caption: "PROGRAMMING" },
+    terminate: { icon: "⊘", color: "red", caption: "TERMINATION" },
+    end: { icon: "✓", color: "green", caption: "END" }
   }[data.kind];
-  return <div className={`survey-node node-${styles.color} ${selected ? "node-selected" : ""}`}>
+  const detailParts = data.detail.split(" · ").filter(Boolean);
+  return <div className={"survey-node node-" + styles.color + (selected ? " node-selected" : "")}>
     {data.kind !== "start" && <Handle type="target" position={Position.Left}/>}
-    <div className="survey-node-head"><span className="node-symbol">{styles.icon}</span><span className="node-tag">&lt;{data.tag}&gt;</span><span className="node-index">#{data.index || "—"}</span></div>
-    <div className="survey-node-label">{data.label}</div>
-    <div className="survey-node-title">{data.title}</div>
-    {data.condition && <div className="node-condition"><GitBranch size={10}/>{data.condition}</div>}
-    <div className="survey-node-foot"><span>{data.kind.toUpperCase()}</span><span>{data.detail}</span></div>
+    <div className="survey-node-head"><span className="node-symbol">{styles.icon}</span><span className="node-caption">{styles.caption}</span><span className="node-index">#{data.index || "—"}</span></div>
+    {data.kind === "question" ? <>
+      <div className="survey-node-qid">{data.variable || data.label}</div>
+      <div className="survey-node-title">{data.title || "Untitled question"}</div>
+      <div className="survey-node-tag">&lt;{data.tag}&gt;</div>
+    </> : <>
+      <div className="survey-node-title survey-node-special">{data.title || data.label}</div>
+      <div className="survey-node-tag">&lt;{data.tag}&gt;</div>
+    </>}
+    {data.condition && <div className="node-condition"><GitBranch size={10}/><span>{data.condition}</span></div>}
+    {detailParts.length > 0 && <div className="survey-node-chips">{detailParts.slice(0,3).map((part,i) => <span key={i}>{part}</span>)}</div>}
+    <div className="survey-node-foot"><span>{data.kind === "question" ? "SURVEY ITEM" : styles.caption}</span><span>XML #{data.index || "—"}</span></div>
     {data.kind !== "end" && <Handle type="source" position={Position.Right}/>}
   </div>;
 }
@@ -143,7 +151,7 @@ export default function Home() {
           <div className="sc-canvas-toolbar"><div><b>LOGIC CANVAS</b><span> · {visibleNodes.length} visible elements</span></div><div><span className="sc-legend"><i className="q"/> Question</span><span className="sc-legend"><i className="l"/> Logic</span><span className="sc-legend"><i className="c"/> Control</span></div></div>
           <div className="sc-canvas">
             <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodeClick={(_, n) => setSelectedId(n.id)} fitView fitViewOptions={{ padding: .24 }} minZoom={.12} maxZoom={1.4} nodesDraggable nodesConnectable={false} elementsSelectable proOptions={{ hideAttribution: true }}>
-              <Background color="#e6e9f0" gap={22} size={1}/><MiniMap pannable zoomable nodeColor={n => ({question:"#6579df",logic:"#8b72dc",control:"#d49a4f",terminate:"#d46b78",start:"#30a17b",end:"#30a17b"} as Record<string,string>)[(n.data as SurveyNodeData).kind] || "#9ba4b5"} maskColor="rgba(247,248,251,.7)"/><Controls showInteractive={false}/>
+              <Background color="#dfe4ef" gap={24} size={1}/><MiniMap pannable zoomable nodeColor={n => ({question:"#6579df",logic:"#8b72dc",control:"#d49a4f",terminate:"#d46b78",start:"#30a17b",end:"#30a17b"} as Record<string,string>)[(n.data as SurveyNodeData).kind] || "#9ba4b5"} maskColor="rgba(247,248,251,.7)"/><Controls showInteractive={false}/>
             </ReactFlow>
             {visibleNodes.length === 0 && <div className="sc-no-results">No elements match this search.</div>}
           </div>
