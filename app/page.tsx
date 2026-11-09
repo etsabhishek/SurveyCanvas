@@ -39,6 +39,8 @@ export default function Home() {
   const [filter, setFilter] = useState("all");
   const [dragging, setDragging] = useState(false);
   const [showSource, setShowSource] = useState(true);
+  const [showPaste, setShowPaste] = useState(false);
+  const [xmlText, setXmlText] = useState("");
   const selected = nodes.find(n => n.id === selectedId);
   const filteredNodes = useMemo(() => nodes.filter(n => {
     const matchesFilter = filter === "all" || n.data.kind === filter;
@@ -49,22 +51,27 @@ export default function Home() {
   const visibleIds = new Set(filteredNodes.map(n => n.id));
   const visibleNodes = nodes.filter(n => visibleIds.has(n.id));
   const visibleEdges = edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
+  const parseAndLoad = (xml: string, sourceName: string) => {
+    setError(""); setWarnings([]);
+    if (!xml.trim()) { setError("Paste your survey XML before generating the canvas."); return; }
+    if (xml.length > 15 * 1024 * 1024) { setError("XML is larger than 15 MB. Please use a smaller file or paste a smaller document."); return; }
+    try {
+      const result = parseDecipherXml(xml);
+      setNodes(result.nodes); setEdges(result.edges); setSummary(result.summary);
+      setWarnings(result.warnings); setSurveyTitle(result.title); setFileName(sourceName);
+      setSelectedId(result.nodes.find(n => n.data.kind === "question")?.id || result.nodes[0]?.id || "");
+      setShowPaste(false);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to parse this XML.");
+    }
+  };
   const importFile = async (file?: File) => {
     if (!file) return;
-    setError(""); setWarnings([]);
     if (!file.name.toLowerCase().endsWith(".xml") && file.type !== "text/xml" && file.type !== "application/xml") {
       setError("Please upload a Decipher XML file (.xml)."); return;
     }
     if (file.size > 15 * 1024 * 1024) { setError("File is larger than 15 MB. Please upload a smaller XML file."); return; }
-    try {
-      const xml = await file.text();
-      const result = parseDecipherXml(xml);
-      setNodes(result.nodes); setEdges(result.edges); setSummary(result.summary);
-      setWarnings(result.warnings); setSurveyTitle(result.title); setFileName(file.name);
-      setSelectedId(result.nodes.find(n => n.data.kind === "question")?.id || result.nodes[0]?.id || "");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Unable to parse this XML file.");
-    }
+    parseAndLoad(await file.text(), file.name);
   };
   const onDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault(); setDragging(false); void importFile(event.dataTransfer.files?.[0]);
@@ -87,7 +94,7 @@ export default function Home() {
       <div className="sc-brand"><div className="sc-logo">S</div><span>SurveyCanvas</span><span className="sc-product-tag">XML ANALYZER</span></div>
       <div className="sc-top-file">{fileName ? <><FileCode2 size={13}/>{fileName}</> : "Decipher survey logic visualizer"}</div>
       <div className="sc-top-actions">
-        {nodes.length > 0 && <><span className="sc-private"><ShieldCheck size={12}/> Parsed locally</span><button className="sc-btn" onClick={exportMap}><ArrowDownToLine size={13}/> Export map</button></>}
+        {nodes.length > 0 && <><span className="sc-private"><ShieldCheck size={12}/> Parsed locally</span><button className="sc-btn" onClick={() => setShowPaste(true)}><Braces size={13}/> Paste XML</button><button className="sc-btn" onClick={exportMap}><ArrowDownToLine size={13}/> Export map</button></>}
         <label className="sc-btn sc-primary"><FileUp size={14}/> Upload XML<input type="file" accept=".xml,text/xml,application/xml" onChange={e => void importFile(e.target.files?.[0])} hidden/></label>
       </div>
     </header>
@@ -100,6 +107,10 @@ export default function Home() {
         <div className="sc-upload-icon"><UploadCloud size={25}/></div><h2>Drop your XML file here</h2><p>or choose a file from your computer</p>
         <label className="sc-btn sc-primary sc-upload-btn">Choose XML file<input type="file" accept=".xml,text/xml,application/xml" onChange={e => void importFile(e.target.files?.[0])} hidden/></label>
         <small>XML files · Up to 15 MB · Processed in your browser</small>
+      </div>
+      <div className="sc-paste-entry">
+        <div className="sc-paste-heading"><Braces size={15}/><div><b>Prefer to paste XML?</b><small>Copy the contents of your Decipher XML and paste them directly.</small></div></div>
+        <button className="sc-btn" onClick={() => { setShowPaste(true); setError(""); }}>Paste XML instead</button>
       </div>
       <div className="sc-privacy-note"><ShieldCheck size={14}/> Your XML is parsed locally in your browser. The file is not uploaded to a server.</div>
       {error && <div className="sc-error"><AlertTriangle size={14}/>{error}</div>}
@@ -146,6 +157,14 @@ export default function Home() {
         </aside>
       </div>
     </>}
-    {error && nodes.length > 0 && <div className="sc-toast-error"><AlertTriangle size={13}/>{error}</div>}
+    {showPaste && <div className="sc-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="paste-xml-title">
+      <section className="sc-paste-modal">
+        <div className="sc-paste-modal-head"><div><span className="sc-modal-icon"><Braces size={17}/></span><div><h2 id="paste-xml-title">Paste survey XML</h2><p>Paste the complete Decipher XML document below.</p></div></div><button aria-label="Close" onClick={() => setShowPaste(false)}><X size={17}/></button></div>
+        <textarea autoFocus spellCheck={false} value={xmlText} onChange={e => setXmlText(e.target.value)} placeholder={'<?xml version="1.0"?>\n<survey ...>\n  ...\n</survey>'}/>
+        <div className="sc-paste-modal-foot"><span>{xmlText.length.toLocaleString()} characters · 15 MB maximum · Parsed locally</span><div><button className="sc-btn" onClick={() => { setXmlText(""); setError(""); }}>Clear</button><button className="sc-btn sc-primary" onClick={() => parseAndLoad(xmlText, "Pasted XML")}><GitBranch size={13}/> Generate canvas</button></div></div>
+        {error && <div className="sc-error"><AlertTriangle size={13}/>{error}</div>}
+      </section>
+    </div>}
+    {error && nodes.length > 0 && !showPaste && <div className="sc-toast-error"><AlertTriangle size={13}/>{error}</div>}
   </main>;
 }
