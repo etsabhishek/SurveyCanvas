@@ -1,210 +1,151 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
-import ReactFlow, {
-  addEdge, Background, Controls, Handle, MiniMap, Position,
-  useEdgesState, useNodesState, type Connection, type Edge, type Node, type NodeProps
-} from "reactflow";
-import {
-  ArrowDown, ArrowLeft, ArrowRight, Braces, Check, ChevronDown, CircleDot,
-  ClipboardList, Copy, Download, Eye, FileText, GitBranch, Grid3X3, Hash,
-  Layers3, ListChecks, Plus, Save, Settings2, ShieldCheck, Sparkles, Star,
-  Trash2, Type, X
-} from "lucide-react";
+import { useCallback, useMemo, useState } from "react";
+import ReactFlow, { Background, Controls, MiniMap, Handle, Position, type NodeProps, type Edge } from "reactflow";
+import { parseDecipherXml, type SurveyNode, type SurveyNodeData } from "@/lib/decipher-parser";
+import { Activity, AlertTriangle, ArrowDownToLine, Braces, CheckCircle2, ChevronRight, Code2, FileCode2, FileUp, GitBranch, Info, Layers3, Search, ShieldCheck, UploadCloud, X } from "lucide-react";
 
-type QType = "single" | "multi" | "text" | "textarea" | "dropdown" | "number" | "rating" | "matrix";
-type Question = { id: string; type: QType; title: string; description: string; required: boolean; options: string[]; variable: string; min?: number; max?: number };
-type FlowData = { kind: "start" | "question" | "end"; question?: Question; label?: string };
-type FlowNode = Node<FlowData>;
-const meta: Record<QType, { label: string; icon: any }> = {
-  single: { label: "Single choice", icon: CircleDot }, multi: { label: "Multiple choice", icon: ListChecks },
-  text: { label: "Short text", icon: Type }, textarea: { label: "Long text", icon: FileText },
-  dropdown: { label: "Dropdown", icon: ChevronDown }, number: { label: "Number", icon: Hash },
-  rating: { label: "Rating scale", icon: Star }, matrix: { label: "Matrix", icon: Grid3X3 }
-};
-const newQuestion = (type: QType, n: number): Question => ({
-  id: "q_" + Math.random().toString(36).slice(2, 9), type,
-  title: ({ single: "Choose one option", multi: "Select all that apply", text: "Enter your answer", textarea: "Share your thoughts", dropdown: "Choose an option", number: "Enter a number", rating: "Rate your experience", matrix: "Rate each statement" } as Record<QType, string>)[type],
-  description: "", required: false, options: type === "matrix" ? ["Statement 1", "Statement 2", "Statement 3"] : ["Option 1", "Option 2", "Option 3"],
-  variable: "Q" + n, min: 1, max: 5
-});
-const initialQuestions: Question[] = [
-  { ...newQuestion("single", 1), id: "q1", title: "Which of the following best describes your role?", description: "Select the option that most closely matches your current role.", options: ["Research / Insights", "Survey Programmer", "Project Manager", "Other"], required: true },
-  { ...newQuestion("multi", 2), id: "q2", title: "Which tools do you use regularly?", description: "Select all that apply.", options: ["Decipher", "Metaform", "Excel", "Python", "Other"] },
-  { ...newQuestion("rating", 3), id: "q3", title: "How confident are you in your current workflow?", description: "1 = Not confident · 5 = Very confident", required: true }
-];
-function makeInitial() {
-  const nodes: FlowNode[] = [
-    { id: "start", type: "flowCard", position: { x: 40, y: 245 }, data: { kind: "start", label: "Survey start" }, draggable: false },
-    ...initialQuestions.map((q, i) => ({ id: q.id, type: "flowCard", position: { x: 350, y: 65 + i * 185 }, data: { kind: "question" as const, question: q } })),
-    { id: "end", type: "flowCard", position: { x: 790, y: 245 }, data: { kind: "end", label: "Survey complete" }, draggable: false }
-  ];
-  const edges: Edge[] = [
-    { id: "e-start-q1", source: "start", target: "q1", animated: true, style: { stroke: "#8b82ee", strokeWidth: 2 } },
-    { id: "e-q1-q2", source: "q1", target: "q2", style: { stroke: "#aeb4c4", strokeWidth: 1.7 } },
-    { id: "e-q2-q3", source: "q2", target: "q3", style: { stroke: "#aeb4c4", strokeWidth: 1.7 } },
-    { id: "e-q3-end", source: "q3", target: "end", style: { stroke: "#aeb4c4", strokeWidth: 1.7 } }
-  ];
-  return { nodes, edges };
-}
-function FlowCard({ data, selected }: NodeProps<FlowData>) {
-  if (data.kind === "start" || data.kind === "end") return <div className={"flow-terminal " + data.kind}>
-    {data.kind === "start" ? <ArrowRight size={15}/> : <Check size={15}/>}
-    <span><b>{data.label}</b><small>{data.kind === "start" ? "Entry point" : "End of questionnaire"}</small></span>
-    {data.kind === "start" && <Handle type="source" position={Position.Right}/>}
-    {data.kind === "end" && <Handle type="target" position={Position.Left}/>}
-  </div>;
-  const q = data.question!;
-  const Icon = meta[q.type].icon;
-  return <div className={"flow-question " + (selected ? "is-selected" : "")}>
-    <Handle type="target" position={Position.Left}/>
-    <div className="flow-node-top"><span className="flow-node-icon"><Icon size={14}/></span><span>{q.variable || "Question"}</span><span className="flow-node-kind">{meta[q.type].label}</span></div>
-    <div className="flow-node-title">{q.title || "Untitled question"}</div>
-    <div className="flow-node-bottom"><span>{q.required ? <><ShieldCheck size={11}/> Required</> : "Optional"}</span><span>{q.options.length} {q.type === "matrix" ? "rows" : "options"}</span></div>
-    <Handle type="source" position={Position.Right}/>
+function SurveyCard({ data, selected }: NodeProps<SurveyNodeData>) {
+  const styles = {
+    start: { icon: "▶", color: "green" },
+    question: { icon: "Q", color: "blue" },
+    logic: { icon: "IF", color: "purple" },
+    control: { icon: "◇", color: "amber" },
+    terminate: { icon: "⊘", color: "red" },
+    end: { icon: "✓", color: "green" }
+  }[data.kind];
+  return <div className={`survey-node node-${styles.color} ${selected ? "node-selected" : ""}`}>
+    {data.kind !== "start" && <Handle type="target" position={Position.Left}/>}
+    <div className="survey-node-head"><span className="node-symbol">{styles.icon}</span><span className="node-tag">&lt;{data.tag}&gt;</span><span className="node-index">#{data.index || "—"}</span></div>
+    <div className="survey-node-label">{data.label}</div>
+    <div className="survey-node-title">{data.title}</div>
+    {data.condition && <div className="node-condition"><GitBranch size={10}/>{data.condition}</div>}
+    <div className="survey-node-foot"><span>{data.kind.toUpperCase()}</span><span>{data.detail}</span></div>
+    {data.kind !== "end" && <Handle type="source" position={Position.Right}/>}
   </div>;
 }
-const nodeTypes = { flowCard: FlowCard };
-const edgeStyle = { stroke: "#aeb4c4", strokeWidth: 1.7 };
+const nodeTypes = { surveyNode: SurveyCard };
+
 export default function Home() {
-  const initial = useMemo(makeInitial, []);
-  const [nodes, setNodes, onNodesChange] = useNodesState<FlowData>(initial.nodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
-  const [selected, setSelected] = useState("q1");
-  const [tab, setTab] = useState<"settings" | "logic">("settings");
-  const [surveyTitle, setSurveyTitle] = useState("Customer Experience Survey");
-  const [surveyDescription, setSurveyDescription] = useState("We'd love to hear your thoughts. This survey takes about 3 minutes.");
-  const [saved, setSaved] = useState(true);
-  const [toast, setToast] = useState("");
-  const [preview, setPreview] = useState(false);
-  const [answers, setAnswers] = useState<Record<string, any>>({});
-  const [previewStep, setPreviewStep] = useState(0);
-  const [branchSource, setBranchSource] = useState("");
-  const [branchLabel, setBranchLabel] = useState("If answer is Yes");
-  const questions = nodes.filter(n => n.data.kind === "question");
-  const activeNode = nodes.find(n => n.id === selected && n.data.kind === "question");
-  const active = activeNode?.data.question;
-  const notify = (s: string) => { setToast(s); window.setTimeout(() => setToast(""), 2200); };
-  useEffect(() => {
+  const [nodes, setNodes] = useState<SurveyNode[]>([]);
+  const [edges, setEdges] = useState<Edge[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [surveyTitle, setSurveyTitle] = useState("SurveyCanvas");
+  const [summary, setSummary] = useState<Record<string, number>>({});
+  const [warnings, setWarnings] = useState<string[]>([]);
+  const [error, setError] = useState("");
+  const [selectedId, setSelectedId] = useState("");
+  const [query, setQuery] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [dragging, setDragging] = useState(false);
+  const [showSource, setShowSource] = useState(true);
+  const selected = nodes.find(n => n.id === selectedId);
+  const filteredNodes = useMemo(() => nodes.filter(n => {
+    const matchesFilter = filter === "all" || n.data.kind === filter;
+    const q = query.toLowerCase();
+    const matchesQuery = !q || [n.data.label, n.data.title, n.data.tag, n.data.condition, n.data.detail].join(" ").toLowerCase().includes(q);
+    return matchesFilter && matchesQuery;
+  }), [nodes, filter, query]);
+  const visibleIds = new Set(filteredNodes.map(n => n.id));
+  const visibleNodes = nodes.filter(n => visibleIds.has(n.id));
+  const visibleEdges = edges.filter(e => visibleIds.has(e.source) && visibleIds.has(e.target));
+  const importFile = async (file?: File) => {
+    if (!file) return;
+    setError(""); setWarnings([]);
+    if (!file.name.toLowerCase().endsWith(".xml") && file.type !== "text/xml" && file.type !== "application/xml") {
+      setError("Please upload a Decipher XML file (.xml)."); return;
+    }
+    if (file.size > 15 * 1024 * 1024) { setError("File is larger than 15 MB. Please upload a smaller XML file."); return; }
     try {
-      const raw = localStorage.getItem("surveycanvas-flow");
-      if (!raw) return;
-      const p = JSON.parse(raw);
-      if (Array.isArray(p.nodes) && Array.isArray(p.edges)) { setNodes(p.nodes); setEdges(p.edges); setSelected(p.nodes.find((n: FlowNode) => n.data.kind === "question")?.id || ""); }
-      if (p.title) setSurveyTitle(p.title);
-      if (p.description) setSurveyDescription(p.description);
-    } catch {}
-  }, [setEdges, setNodes]);
-  useEffect(() => {
-    setSaved(false);
-    const t = window.setTimeout(() => {
-      try { localStorage.setItem("surveycanvas-flow", JSON.stringify({ nodes, edges, title: surveyTitle, description: surveyDescription })); setSaved(true); } catch {}
-    }, 450);
-    return () => window.clearTimeout(t);
-  }, [nodes, edges, surveyTitle, surveyDescription]);
-  const onConnect = useCallback((connection: Connection) => setEdges(es => addEdge({ ...connection, id: "edge_" + Math.random().toString(36).slice(2, 9), type: "smoothstep", label: "Next", labelStyle: { fill: "#687187", fontSize: 10 }, labelBgStyle: { fill: "#fff", fillOpacity: 1 }, style: edgeStyle }, es)), [setEdges]);
-  const patchQuestion = (patch: Partial<Question>) => {
-    if (!active) return;
-    setNodes(ns => ns.map(n => n.id === selected && n.data.question ? { ...n, data: { ...n.data, question: { ...n.data.question, ...patch } } } : n));
+      const xml = await file.text();
+      const result = parseDecipherXml(xml);
+      setNodes(result.nodes); setEdges(result.edges); setSummary(result.summary);
+      setWarnings(result.warnings); setSurveyTitle(result.title); setFileName(file.name);
+      setSelectedId(result.nodes.find(n => n.data.kind === "question")?.id || result.nodes[0]?.id || "");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Unable to parse this XML file.");
+    }
   };
-  const addQuestion = (type: QType) => {
-    const q = newQuestion(type, questions.length + 1);
-    const y = 70 + questions.length * 185;
-    const node: FlowNode = { id: q.id, type: "flowCard", position: { x: 350, y }, data: { kind: "question", question: q } };
-    const endEdge = edges.find(e => e.target === "end");
-    setNodes(ns => ns.filter(n => n.id !== "end").concat(node, ns.find(n => n.id === "end")!));
-    setEdges(es => {
-      const base = es.filter(e => e.id !== endEdge?.id);
-      const previous = endEdge?.source || "start";
-      return [...base, { id: "edge_" + q.id, source: previous, target: q.id, type: "smoothstep", style: edgeStyle }, { id: "edge_" + q.id + "_end", source: q.id, target: "end", type: "smoothstep", style: edgeStyle }];
-    });
-    setSelected(q.id); setTab("settings"); notify("Question added to flow");
+  const onDrop = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault(); setDragging(false); void importFile(event.dataTransfer.files?.[0]);
+  }, []);
+  const exportMap = () => {
+    const payload = { sourceFile: fileName, surveyTitle, summary, warnings, nodes, edges };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a");
+    a.href = url; a.download = "surveycanvas-" + (fileName.replace(/\\.xml$/i, "") || "map") + ".json"; a.click(); URL.revokeObjectURL(url);
   };
-  const deleteSelected = () => {
-    if (!active) return;
-    const incoming = edges.find(e => e.target === selected && e.source !== "start");
-    const outgoing = edges.find(e => e.source === selected && e.target !== "end");
-    setNodes(ns => ns.filter(n => n.id !== selected));
-    setEdges(es => {
-      const next = es.filter(e => e.source !== selected && e.target !== selected);
-      if (incoming && outgoing) next.push({ id: "edge_" + incoming.source + "_" + outgoing.target, source: incoming.source, target: outgoing.target, type: "smoothstep", style: edgeStyle });
-      return next;
-    });
-    setSelected(""); notify("Question removed");
+  const exportSource = () => {
+    if (!selected?.data.source) return;
+    const blob = new Blob([selected.data.source], { type: "application/xml" });
+    const url = URL.createObjectURL(blob); const a = document.createElement("a");
+    a.href = url; a.download = (selected.data.variable || selected.data.tag) + ".xml"; a.click(); URL.revokeObjectURL(url);
   };
-  const addBranch = () => {
-    if (!active || !branchSource || branchSource === selected) return;
-    setEdges(es => [...es.filter(e => !(e.source === branchSource && e.target === selected && e.label)), {
-      id: "branch_" + branchSource + "_" + selected + "_" + Date.now(), source: branchSource, target: selected, type: "smoothstep",
-      label: branchLabel || "Conditional path", labelStyle: { fill: "#6258d7", fontSize: 10, fontWeight: 600 },
-      labelBgStyle: { fill: "#f2f0ff", fillOpacity: 1 }, style: { stroke: "#7569e8", strokeWidth: 2, strokeDasharray: "5 4" }
-    }]);
-    notify("Branch connection added");
-  };
-  const exportJSON = () => {
-    const payload = { title: surveyTitle, description: surveyDescription, nodes, edges, questions: questions.map(n => n.data.question) };
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })); a.download = "surveycanvas-flow.json"; a.click(); URL.revokeObjectURL(a.href); notify("Survey flow exported");
-  };
-  const previewQuestions = questions.map(n => n.data.question!).filter(Boolean);
-  const current = previewQuestions[previewStep];
-  const submitPreview = () => {
-    const result = previewQuestions.map(q => ({ variable: q.variable, question: q.title, answer: answers[q.id] ?? null }));
-    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify({ title: surveyTitle, responses: result }, null, 2)], { type: "application/json" })); a.download = "surveycanvas-test-response.json"; a.click(); setPreview(false); notify("Test response exported");
-  };
-  return <main className="app-shell flow-app">
-    <header className="topbar">
-      <div className="brand"><div className="brand-mark">S</div>SurveyCanvas</div>
-      <div className="top-meta">Projects <span>/</span> {surveyTitle}</div>
-      <div className="top-actions"><span className="save-indicator"><i className={saved ? "saved" : ""}/>{saved ? "All changes saved" : "Saving…"}</span><button className="btn" onClick={exportJSON}><Download size={14}/> Export flow</button><button className="btn btn-primary" onClick={() => { setPreview(true); setPreviewStep(0); setAnswers({}); }}><Eye size={14}/> Test survey</button></div>
+
+  return <main className="sc-shell">
+    <header className="sc-topbar">
+      <div className="sc-brand"><div className="sc-logo">S</div><span>SurveyCanvas</span><span className="sc-product-tag">XML ANALYZER</span></div>
+      <div className="sc-top-file">{fileName ? <><FileCode2 size={13}/>{fileName}</> : "Decipher survey logic visualizer"}</div>
+      <div className="sc-top-actions">
+        {nodes.length > 0 && <><span className="sc-private"><ShieldCheck size={12}/> Parsed locally</span><button className="sc-btn" onClick={exportMap}><ArrowDownToLine size={13}/> Export map</button></>}
+        <label className="sc-btn sc-primary"><FileUp size={14}/> Upload XML<input type="file" accept=".xml,text/xml,application/xml" onChange={e => void importFile(e.target.files?.[0])} hidden/></label>
+      </div>
     </header>
-    <div className="flow-workspace">
-      <aside className="flow-library">
-        <div className="side-label">BUILD YOUR SURVEY</div>
-        <div className="library-section-title">QUESTION NODES</div>
-        {(Object.keys(meta) as QType[]).map(type => { const Icon = meta[type].icon; return <button className="library-item" key={type} onClick={() => addQuestion(type)}><span><Icon size={15}/></span>{meta[type].label}<Plus size={13} className="library-plus"/></button>; })}
-        <div className="library-divider"/>
-        <div className="library-section-title">FLOW ELEMENTS</div>
-        <div className="flow-help"><GitBranch size={15}/><div><b>Branching logic</b><p>Select a question, open Logic, and add a conditional connection to another node.</p></div></div>
-        <div className="flow-help"><Layers3 size={15}/><div><b>Arrange your flow</b><p>Drag nodes to organize the respondent journey. Connect handles to create paths.</p></div></div>
-        <div className="library-footer"><span className="live-dot"/> Autosave enabled <small>Stored in this browser</small></div>
-      </aside>
-      <section className="canvas-area">
-        <div className="canvas-toolbar"><div><div className="canvas-kicker">VISUAL PROGRAMMING WORKSPACE</div><h1>{surveyTitle}</h1><p>{questions.length} questions <span>·</span> {edges.length} connections <span>·</span> Drag nodes to arrange your flow</p></div><div className="canvas-toolbar-actions"><button className="btn" onClick={() => { const { nodes: n, edges: e } = makeInitial(); setNodes(n); setEdges(e); setSelected("q1"); notify("Starter flow restored"); }}><ClipboardList size={13}/> Reset sample</button><button className="btn" onClick={exportJSON}><Braces size={13}/> JSON</button></div></div>
-        <div className="flow-canvas">
-          <div className="canvas-hint"><span className="hint-dot"/> CONNECTED SURVEY FLOW <span>·</span> Select a node to edit</div>
-          <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, n) => { if (n.data.kind === "question") setSelected(n.id); }} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.25 }} minZoom={0.25} maxZoom={1.5} defaultEdgeOptions={{ type: "smoothstep", style: edgeStyle }} deleteKeyCode={["Backspace", "Delete"]} proOptions={{ hideAttribution: true }}>
-            <Background color="#e5e8f0" gap={22} size={1}/>
-            <MiniMap nodeColor={n => n.data.kind === "start" ? "#20ad83" : n.data.kind === "end" ? "#aab1c0" : "#776bea"} maskColor="rgba(246,247,251,.72)" />
-            <Controls showInteractive={false}/>
-          </ReactFlow>
-          <div className="canvas-legend"><span><i className="legend-solid"/> Default path</span><span><i className="legend-dashed"/> Conditional branch</span></div>
+
+    {!nodes.length ? <section className="sc-empty-wrap">
+      <div className="sc-empty-copy"><div className="sc-eyebrow"><span/> DECIPHER XML → INTERACTIVE LOGIC MAP</div><h1>See your survey logic.<br/><em>Not just the XML.</em></h1><p>Upload a Decipher survey XML file to map its questions, programming controls and conditional expressions into a navigable visual workspace.</p>
+        <div className="sc-capabilities"><span><GitBranch size={14}/> Conditions & routing markers</span><span><Layers3 size={14}/> Questions & survey controls</span><span><Code2 size={14}/> Original XML per node</span></div>
+      </div>
+      <div className={"sc-dropzone " + (dragging ? "drag-active" : "")} onDragOver={e => { e.preventDefault(); setDragging(true); }} onDragLeave={() => setDragging(false)} onDrop={onDrop}>
+        <div className="sc-upload-icon"><UploadCloud size={25}/></div><h2>Drop your XML file here</h2><p>or choose a file from your computer</p>
+        <label className="sc-btn sc-primary sc-upload-btn">Choose XML file<input type="file" accept=".xml,text/xml,application/xml" onChange={e => void importFile(e.target.files?.[0])} hidden/></label>
+        <small>XML files · Up to 15 MB · Processed in your browser</small>
+      </div>
+      <div className="sc-privacy-note"><ShieldCheck size={14}/> Your XML is parsed locally in your browser. The file is not uploaded to a server.</div>
+      {error && <div className="sc-error"><AlertTriangle size={14}/>{error}</div>}
+      <div className="sc-disclaimer"><Info size={13}/> Initial parser supports common Decipher question and control tags. Routing is shown as a structural map; complex Decipher expressions may require manual review.</div>
+    </section> : <>
+      <div className="sc-summarybar">
+        <div className="sc-survey-name"><span className="sc-file-icon"><FileCode2 size={16}/></span><div><b>{surveyTitle}</b><small>{fileName} · Imported XML</small></div></div>
+        <div className="sc-stats">
+          <span><b>{summary.questions || 0}</b> Questions</span><span><b>{summary.logic || 0}</b> Logic markers</span><span><b>{summary.controls || 0}</b> Controls</span><span><b>{summary.terminations || 0}</b> Terminations</span>
         </div>
-        <div className="canvas-status"><span><GitBranch size={12}/> Visual flow editor</span><span>Drag from a node handle to create a connection</span></div>
-      </section>
-      <aside className="flow-inspector">
-        <div className="inspector-tabs"><button className={tab === "settings" ? "active" : ""} onClick={() => setTab("settings")}><Settings2 size={13}/> Question</button><button className={tab === "logic" ? "active" : ""} onClick={() => setTab("logic")}><GitBranch size={13}/> Logic</button></div>
-        {!active ? <div className="inspector-empty"><div><Sparkles size={20}/></div><b>Select a question node</b><p>Click any question on the canvas to edit its wording, options, validation and branching.</p></div> : tab === "settings" ? <>
-          <div className="inspector-heading"><span className="inspector-overline">SELECTED NODE</span><h2>{active.variable}</h2><p>{meta[active.type].label}</p></div>
-          <div className="inspector-field"><label>QUESTION TEXT</label><textarea rows={3} value={active.title} onChange={e => patchQuestion({ title: e.target.value })}/></div>
-          <div className="inspector-field"><label>DESCRIPTION / HINT</label><textarea rows={2} value={active.description} onChange={e => patchQuestion({ description: e.target.value })} placeholder="Add context for respondents…"/></div>
-          <div className="inspector-field"><label>VARIABLE NAME</label><input value={active.variable} onChange={e => patchQuestion({ variable: e.target.value.replace(/[^a-zA-Z0-9_]/g, "") })}/></div>
-          {["single", "multi", "dropdown", "matrix"].includes(active.type) && <div className="inspector-field"><label>{active.type === "matrix" ? "MATRIX ROWS" : "ANSWER OPTIONS"}</label>{active.options.map((option, i) => <div className="option-row" key={i}><input value={option} onChange={e => patchQuestion({ options: active.options.map((v, j) => j === i ? e.target.value : v) })}/><button onClick={() => patchQuestion({ options: active.options.filter((_, j) => j !== i) })}><X size={13}/></button></div>)}<button className="add-option" onClick={() => patchQuestion({ options: [...active.options, "New option"] })}><Plus size={12}/> Add option</button></div>}
-          {active.type === "rating" && <div className="inspector-field"><label>RATING SCALE</label><select value={active.max || 5} onChange={e => patchQuestion({ max: Number(e.target.value) })}><option value="3">1 to 3</option><option value="5">1 to 5</option><option value="7">1 to 7</option><option value="10">1 to 10</option></select></div>}
-          {active.type === "number" && <div className="inspector-field"><label>VALIDATION RANGE</label><div className="range-row"><input type="number" placeholder="Minimum" value={active.min ?? ""} onChange={e => patchQuestion({ min: e.target.value === "" ? undefined : Number(e.target.value) })}/><input type="number" placeholder="Maximum" value={active.max ?? ""} onChange={e => patchQuestion({ max: e.target.value === "" ? undefined : Number(e.target.value) })}/></div></div>}
-          <div className="required-row"><span><b>Required question</b><small>Respondents must answer this</small></span><button className={"toggle " + (active.required ? "on" : "")} onClick={() => patchQuestion({ required: !active.required })}><i/></button></div>
-          <button className="delete-node" onClick={deleteSelected}><Trash2 size={13}/> Delete question node</button>
-        </> : <>
-          <div className="inspector-heading"><span className="inspector-overline">ROUTING & CONDITIONS</span><h2>Branching logic</h2><p>Connect an answer path to this question.</p></div>
-          <div className="logic-callout"><GitBranch size={15}/><span>Conditional paths appear as dashed purple connections on the canvas.</span></div>
-          <div className="inspector-field"><label>FROM QUESTION</label><select value={branchSource} onChange={e => setBranchSource(e.target.value)}><option value="">Choose source node…</option>{questions.filter(n => n.id !== selected).map(n => <option key={n.id} value={n.id}>{n.data.question?.variable} — {n.data.question?.title.slice(0, 30)}</option>)}</select></div>
-          <div className="inspector-field"><label>CONDITION LABEL</label><input value={branchLabel} onChange={e => setBranchLabel(e.target.value)} placeholder="e.g. If answer is Yes"/></div>
-          <button className="btn btn-primary branch-button" onClick={addBranch} disabled={!branchSource}><GitBranch size={13}/> Add conditional connection</button>
-          <div className="logic-note"><b>More precise routing</b><p>Use a clear condition label to document which answer should follow this path. You can also draw connections directly between node handles.</p></div>
-          <div className="inspector-field"><label>CONNECTIONS TO THIS NODE</label>{edges.filter(e => e.target === selected).length ? edges.filter(e => e.target === selected).map(e => <div className="connection-item" key={e.id}><span className={String(e.id).startsWith("branch") ? "branch-mark" : "default-mark"}/><span>{nodes.find(n => n.id === e.source)?.data.question?.variable || "Survey start"} <small>{String(e.label || "Default path")}</small></span><button onClick={() => setEdges(es => es.filter(x => x.id !== e.id))}><X size={12}/></button></div>) : <p className="no-connections">No incoming connections yet.</p>}</div>
-        </>}
-      </aside>
-    </div>
-    {preview && <div className="preview-overlay"><div className="preview-window"><div className="preview-head"><div><b>Respondent test</b><small>Preview the questionnaire experience</small></div><button className="close-preview" onClick={() => setPreview(false)}><X size={17}/></button></div><div className="preview-body"><div className="preview-kicker">SURVEY PREVIEW</div><h2>{surveyTitle}</h2><p>{surveyDescription}</p><div className="preview-progress"><i style={{ width: previewQuestions.length ? ((previewStep + 1) / previewQuestions.length * 100) + "%" : "0%" }}/></div>{current ? <><small className="preview-count">QUESTION {previewStep + 1} OF {previewQuestions.length}</small><h3>{current.title}{current.required && <em> *</em>}</h3>{current.description && <p>{current.description}</p>}{["single", "multi"].includes(current.type) ? current.options.map(o => <label className="respondent-option" key={o}><input type={current.type === "single" ? "radio" : "checkbox"} name={current.id} checked={current.type === "single" ? answers[current.id] === o : (answers[current.id] || []).includes(o)} onChange={e => setAnswers(a => ({ ...a, [current.id]: current.type === "single" ? o : e.target.checked ? [...(a[current.id] || []), o] : (a[current.id] || []).filter((v: string) => v !== o) }))}/>{o}</label>) : current.type === "dropdown" ? <select value={answers[current.id] || ""} onChange={e => setAnswers(a => ({ ...a, [current.id]: e.target.value }))}><option value="">Select an answer</option>{current.options.map(o => <option key={o}>{o}</option>)}</select> : current.type === "rating" ? <div className="rating-answers">{Array.from({ length: current.max || 5 }, (_, i) => <button className={answers[current.id] === i + 1 ? "chosen" : ""} key={i} onClick={() => setAnswers(a => ({ ...a, [current.id]: i + 1 }))}>{i + 1}</button>)}</div> : current.type === "matrix" ? current.options.map(o => <div className="matrix-answer" key={o}>{o}<select value={answers[current.id]?.[o] || ""} onChange={e => setAnswers(a => ({ ...a, [current.id]: { ...(a[current.id] || {}), [o]: e.target.value } }))}><option value="">Rate…</option>{[1,2,3,4,5].map(n => <option key={n}>{n}</option>)}</select></div>) : <textarea rows={current.type === "textarea" ? 4 : 1} placeholder="Your answer…" value={answers[current.id] || ""} onChange={e => setAnswers(a => ({ ...a, [current.id]: e.target.value }))}/>}</> : <p>No questions in this survey yet.</p>}<div className="preview-actions"><button className="btn" onClick={() => previewStep === 0 ? setPreview(false) : setPreviewStep(s => s - 1)}><ArrowLeft size={13}/> Back</button>{previewStep < previewQuestions.length - 1 ? <button className="btn btn-primary" onClick={() => { if (current?.required && !answers[current.id]) { notify("Please answer this required question"); return; } setPreviewStep(s => s + 1); }} >Next <ArrowRight size={13}/></button> : <button className="btn btn-primary" onClick={() => { if (current?.required && !answers[current.id]) { notify("Please answer this required question"); return; } submitPreview(); }}>Submit test <Check size={13}/></button>}</div></div></div></div>}
-    {toast && <div className="toast">{toast}</div>}
+        <button className="sc-btn" onClick={() => { setNodes([]); setEdges([]); setFileName(""); setSelectedId(""); setWarnings([]); setError(""); }}><X size={13}/> Close survey</button>
+      </div>
+      <div className="sc-workspace">
+        <aside className="sc-left-panel">
+          <div className="sc-panel-heading">SURVEY EXPLORER <span>{nodes.length}</span></div>
+          <div className="sc-search"><Search size={13}/><input placeholder="Find QID, text or logic…" value={query} onChange={e => setQuery(e.target.value)}/></div>
+          <div className="sc-filter-list">
+            {[["all","All elements"],["question","Questions"],["logic","Logic markers"],["control","Survey controls"],["terminate","Terminations"]].map(([v,l]) => <button key={v} className={filter === v ? "active" : ""} onClick={() => setFilter(v)}>{l}<span>{v === "all" ? nodes.length : nodes.filter(n => n.data.kind === v).length}</span></button>)}
+          </div>
+          <div className="sc-tree-list">{filteredNodes.map(n => <button key={n.id} className={selectedId === n.id ? "selected" : ""} onClick={() => setSelectedId(n.id)}><span className={"tree-kind " + n.data.kind}>{n.data.kind === "question" ? "Q" : n.data.kind === "logic" ? "IF" : n.data.kind === "terminate" ? "T" : n.data.kind === "start" ? "▶" : n.data.kind === "end" ? "✓" : "◇"}</span><span><b>{n.data.label}</b><small>{n.data.title}</small></span><ChevronRight size={12}/></button>)}</div>
+          <div className="sc-left-foot"><ShieldCheck size={12}/> Local browser session</div>
+        </aside>
+        <section className="sc-canvas-section">
+          <div className="sc-canvas-toolbar"><div><b>LOGIC CANVAS</b><span> · {visibleNodes.length} visible elements</span></div><div><span className="sc-legend"><i className="q"/> Question</span><span className="sc-legend"><i className="l"/> Logic</span><span className="sc-legend"><i className="c"/> Control</span></div></div>
+          <div className="sc-canvas">
+            <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodeClick={(_, n) => setSelectedId(n.id)} fitView fitViewOptions={{ padding: .24 }} minZoom={.12} maxZoom={1.4} nodesDraggable nodesConnectable={false} elementsSelectable proOptions={{ hideAttribution: true }}>
+              <Background color="#e6e9f0" gap={22} size={1}/><MiniMap pannable zoomable nodeColor={n => ({question:"#6579df",logic:"#8b72dc",control:"#d49a4f",terminate:"#d46b78",start:"#30a17b",end:"#30a17b"} as Record<string,string>)[(n.data as SurveyNodeData).kind] || "#9ba4b5"} maskColor="rgba(247,248,251,.7)"/><Controls showInteractive={false}/>
+            </ReactFlow>
+            {visibleNodes.length === 0 && <div className="sc-no-results">No elements match this search.</div>}
+          </div>
+          <div className="sc-canvas-foot"><span><Activity size={12}/> XML structure map</span><span>Connections follow document order, not a verified runtime simulation.</span></div>
+        </section>
+        <aside className="sc-inspector">
+          <div className="sc-inspector-head"><div><span>ELEMENT INSPECTOR</span><b>{selected?.data.label || "Select an element"}</b></div><button onClick={() => setShowSource(v => !v)}><Code2 size={14}/></button></div>
+          {selected ? <div className="sc-inspector-body">
+            <div className="sc-element-type"><span className={"tree-kind " + selected.data.kind}>{selected.data.tag.slice(0,3).toUpperCase()}</span><div><b>&lt;{selected.data.tag}&gt;</b><small>{selected.data.kind} element · #{selected.data.index}</small></div></div>
+            <div className="sc-detail-field"><label>LABEL / QID</label><div>{selected.data.variable || "—"}</div></div>
+            <div className="sc-detail-field"><label>QUESTION / ELEMENT TITLE</label><div>{selected.data.title}</div></div>
+            {selected.data.condition && <div className="sc-detail-field"><label>CONDITION ATTRIBUTE</label><pre>{selected.data.condition}</pre></div>}
+            <div className="sc-detail-field"><label>XML ATTRIBUTES</label><div className="sc-attributes">{Object.entries(selected.data.attributes).length ? Object.entries(selected.data.attributes).map(([k,v]) => <div key={k}><span>{k}</span><b>{v}</b></div>) : <small>No attributes</small>}</div></div>
+            {showSource && <div className="sc-source-block"><div><label>ORIGINAL XML</label><button onClick={exportSource}><ArrowDownToLine size={11}/> Save snippet</button></div><pre>{selected.data.source || "No source XML for this structural marker."}</pre></div>}
+          </div> : <div className="sc-inspector-empty">Select a node on the canvas or in the explorer to inspect its XML attributes and source snippet.</div>}
+          {warnings.length > 0 && <div className="sc-warnings"><div><AlertTriangle size={13}/> PARSER NOTES <b>{warnings.length}</b></div>{warnings.slice(0,8).map((w,i) => <p key={i}>{w}</p>)}{warnings.length > 8 && <small>+ {warnings.length - 8} more notes</small>}</div>}
+        </aside>
+      </div>
+    </>}
+    {error && nodes.length > 0 && <div className="sc-toast-error"><AlertTriangle size={13}/>{error}</div>}
   </main>;
 }
