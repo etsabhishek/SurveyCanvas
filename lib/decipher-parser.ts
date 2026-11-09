@@ -58,10 +58,57 @@ function isSemantic(el: Element) {
   return false;
 }
 
+function addMissingDecipherNamespaces(xml: string) {
+  // Some Decipher exports use proprietary attribute prefixes without including
+  // xmlns declarations. Browsers reject those documents before we can inspect them.
+  const rootMatch = /<([A-Za-z_][\\w:.-]*)(?=[\\s/>])/.exec(xml);
+  if (!rootMatch || rootMatch.index === undefined) return xml;
+
+  const rootStart = rootMatch.index;
+  let quote = "";
+  let rootEnd = -1;
+  for (let i = rootStart; i < xml.length; i++) {
+    const char = xml[i];
+    if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") {
+      quote = char;
+    } else if (char === ">") {
+      rootEnd = i;
+      break;
+    }
+  }
+  if (rootEnd < 0) return xml;
+
+  const rootTag = xml.slice(rootStart, rootEnd + 1);
+  const declared = new Set(
+    Array.from(rootTag.matchAll(/\\bxmlns:([A-Za-z_][\\w.-]*)\\s*=/g), match => match[1])
+  );
+  const used = new Set<string>();
+
+  // Inspect markup names only; prefixes inside CDATA, scripts, and text are not namespaces.
+  for (const tagMatch of xml.matchAll(/<[^!?][^>]*>/g)) {
+    const tag = tagMatch[0];
+    const elementPrefix = /^<\\/?([A-Za-z_][\\w.-]*):[A-Za-z_][\\w.-]*/.exec(tag)?.[1];
+    if (elementPrefix) used.add(elementPrefix);
+    for (const attributeMatch of tag.matchAll(/\\s([A-Za-z_][\\w.-]*):[A-Za-z_][\\w.-]*\\s*=/g)) {
+      if (attributeMatch[1] !== "xmlns") used.add(attributeMatch[1]);
+    }
+  }
+
+  const missing = Array.from(used).filter(prefix => !declared.has(prefix));
+  if (!missing.length) return xml;
+
+  const declarations = missing
+    .map(prefix => `xmlns:${prefix}="urn:decipher:namespace:${prefix}"`)
+    .join(" ");
+  return xml.slice(0, rootEnd) + " " + declarations + xml.slice(rootEnd);
+}
+
 export function parseDecipherXml(xml: string): { nodes: SurveyNode[]; edges: Edge[]; title: string; summary: Record<string, number>; warnings: string[] } {
   if (/<!DOCTYPE/i.test(xml) || /<!ENTITY/i.test(xml)) throw new Error("XML document types and custom entities are not accepted.");
   // Clipboard content can include a UTF-8 BOM; remove it before XML parsing.
-  const normalizedXml = xml.replace(/^\\uFEFF/, "").trim();
+  const normalizedXml = addMissingDecipherNamespaces(xml.replace(/^\\uFEFF/, "").trim());
   if (!normalizedXml) throw new Error("The XML input is empty. Paste the complete Decipher XML document.");
   const doc = new DOMParser().parseFromString(normalizedXml, "application/xml");
   const parseError = doc.getElementsByTagName("parsererror")[0] ||
