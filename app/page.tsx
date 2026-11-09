@@ -1,60 +1,210 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { Plus, Type, ListChecks, CircleDot, CheckSquare, ChevronDown, Hash, Star, Grid3X3, GripVertical, Copy, Trash2, Eye, Download, Undo2, Redo2, Settings2, X, Sparkles, FileText, PanelRightClose, Check, ArrowRight, ArrowLeft, Save, MoreHorizontal, Braces, GitBranch, ClipboardList } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import ReactFlow, {
+  addEdge, Background, Controls, Handle, MiniMap, Position,
+  useEdgesState, useNodesState, type Connection, type Edge, type Node, type NodeProps
+} from "reactflow";
+import {
+  ArrowDown, ArrowLeft, ArrowRight, Braces, Check, ChevronDown, CircleDot,
+  ClipboardList, Copy, Download, Eye, FileText, GitBranch, Grid3X3, Hash,
+  Layers3, ListChecks, Plus, Save, Settings2, ShieldCheck, Sparkles, Star,
+  Trash2, Type, X
+} from "lucide-react";
 
-type QType = "text"|"textarea"|"single"|"multi"|"dropdown"|"number"|"rating"|"matrix";
-type Question = { id:string; type:QType; title:string; description:string; required:boolean; options:string[]; variable:string; min?:number; max?:number; logic?:{questionId:string;operator:string;value:string} };
-const typeMeta:Record<QType,{label:string;icon:any;hint:string}> = {
-  single:{label:"Single choice",icon:CircleDot,hint:"Select one answer"},
-  multi:{label:"Multiple choice",icon:CheckSquare,hint:"Select all that apply"},
-  text:{label:"Short text",icon:Type,hint:"One-line response"},
-  textarea:{label:"Long text",icon:FileText,hint:"Open-ended response"},
-  dropdown:{label:"Dropdown",icon:ChevronDown,hint:"Choose from a list"},
-  number:{label:"Number",icon:Hash,hint:"Numeric response"},
-  rating:{label:"Rating scale",icon:Star,hint:"Rate from 1 to 5"},
-  matrix:{label:"Matrix",icon:Grid3X3,hint:"Grid of statements"}
+type QType = "single" | "multi" | "text" | "textarea" | "dropdown" | "number" | "rating" | "matrix";
+type Question = { id: string; type: QType; title: string; description: string; required: boolean; options: string[]; variable: string; min?: number; max?: number };
+type FlowData = { kind: "start" | "question" | "end"; question?: Question; label?: string };
+type FlowNode = Node<FlowData>;
+const meta: Record<QType, { label: string; icon: any }> = {
+  single: { label: "Single choice", icon: CircleDot }, multi: { label: "Multiple choice", icon: ListChecks },
+  text: { label: "Short text", icon: Type }, textarea: { label: "Long text", icon: FileText },
+  dropdown: { label: "Dropdown", icon: ChevronDown }, number: { label: "Number", icon: Hash },
+  rating: { label: "Rating scale", icon: Star }, matrix: { label: "Matrix", icon: Grid3X3 }
 };
-const makeQ=(type:QType,n:number):Question=>({id:crypto.randomUUID(),type,title:({single:"Which option best describes your preference?",multi:"Which of these have you used?",text:"What is your job title?",textarea:"What could we improve about your experience?",dropdown:"Which region do you live in?",number:"How many years of experience do you have?",rating:"How satisfied are you with the experience?",matrix:"How would you rate each statement?"} as Record<QType,string>)[type],description:"",required:false,options:type==="matrix"?["Ease of use","Value for money","Customer support"]:["Option 1","Option 2","Option 3"],variable:"Q"+n,min:1,max:5});
-const starter:Question[]=[{...makeQ("single",1),id:"q1",title:"Which of the following best describes your role?",description:"Select the option that most closely matches your current role.",options:["Research / Insights","Survey Programmer","Project Manager","Other"],required:true},{...makeQ("multi",2),id:"q2",title:"Which tools do you use regularly?",description:"Select all that apply.",options:["Decipher","Metaform","Excel","Python","Other"]},{...makeQ("rating",3),id:"q3",title:"How confident are you in your current workflow?",description:"1 = Not confident · 5 = Very confident",required:true}];
-const uid=()=>Math.random().toString(36).slice(2,9);
-function QuestionPreview({q}:{q:Question}){return <><div className="q-top"><span className="drag-handle"><GripVertical size={15}/></span><span className="q-number">{q.variable||"Q"}</span><span className="q-kind">{typeMeta[q.type].label}{q.required?" · Required":""}</span></div><h3 className="q-title">{q.title||"Untitled question"}</h3>{q.description&&<p className="q-description">{q.description}</p>}<div className="choice-preview">{q.type==="single"||q.type==="multi"||q.type==="dropdown"?q.options.map((o,i)=><div className="choice-line" key={i}>{q.type==="single"?<span className="fake-radio"/>:<span className="fake-check"/>}{o}</div>):q.type==="rating"?<div style={{display:"flex",gap:8,color:"#a4aabd",fontSize:18}}>{"★".repeat(q.max||5).split("").map((_,i)=><span key={i}>{i+1}</span>)}</div>:q.type==="matrix"?<div style={{fontSize:10,color:"#8b93a4"}}>{q.options.join("  ·  ")}<br/><br/>○ ○ ○ ○ ○</div>:<div className="fake-input">{q.type==="number"?"Enter a number":"Type your answer..."}</div>}</div></>}
-export default function Home(){
- const [questions,setQuestions]=useState<Question[]>(starter); const [selected,setSelected]=useState("q1"); const [title,setTitle]=useState("Customer Experience Survey"); const [description,setDescription]=useState("We'd love to hear your thoughts. This survey takes about 3 minutes."); const [preview,setPreview]=useState(false); const [answers,setAnswers]=useState<Record<string,any>>({}); const [step,setStep]=useState(0); const [toast,setToast]=useState(""); const [dragId,setDragId]=useState<string|null>(null); const [dragOver,setDragOver]=useState<string|null>(null); const [tab,setTab]=useState<"settings"|"logic">("settings"); const [history,setHistory]=useState<Question[][]>([]); const [future,setFuture]=useState<Question[][]>([]); const [saved,setSaved]=useState(true);
- const active=questions.find(q=>q.id===selected)||null;
- const notify=(s:string)=>{setToast(s);setTimeout(()=>setToast(""),2200)};
- useEffect(()=>{try{const raw=localStorage.getItem("surveycanvas-project");if(raw){const p=JSON.parse(raw);if(p.questions?.length){setQuestions(p.questions);setTitle(p.title||title);setDescription(p.description||description);setSelected(p.questions[0].id)}}}catch{}},[]);
- useEffect(()=>{setSaved(false);const t=setTimeout(()=>{try{localStorage.setItem("surveycanvas-project",JSON.stringify({questions,title,description}));setSaved(true)}catch{}},500);return()=>clearTimeout(t)},[questions,title,description]);
- const change=(fn:(q:Question[])=>Question[])=>{setHistory(h=>[...h.slice(-19),questions]);setFuture([]);setQuestions(fn(questions));};
- const add=(type:QType)=>{const q=makeQ(type,questions.length+1);change(qs=>[...qs,q]);setSelected(q.id);setTab("settings");notify(typeMeta[type].label+" added")};
- const patch=(updates:Partial<Question>)=>active&&change(qs=>qs.map(q=>q.id===active.id?{...q,...updates}:q));
- const remove=(id:string)=>{change(qs=>qs.filter(q=>q.id!==id));const next=questions.find(q=>q.id!==id);setSelected(next?.id||"");notify("Question removed")};
- const duplicate=(q:Question)=>{const copy={...q,id:uid(),variable:q.variable+"_copy",options:[...q.options],title:q.title+" (copy)"};change(qs=>{const i=qs.findIndex(x=>x.id===q.id);return [...qs.slice(0,i+1),copy,...qs.slice(i+1)]});setSelected(copy.id);notify("Question duplicated")};
- const reorder=(target:string)=>{if(!dragId||dragId===target)return;change(qs=>{const from=qs.findIndex(q=>q.id===dragId),to=qs.findIndex(q=>q.id===target);const next=[...qs];const [item]=next.splice(from,1);next.splice(to,0,item);return next});setDragId(null);setDragOver(null)};
- const undo=()=>{if(!history.length)return;setFuture(f=>[questions,...f]);setQuestions(history[history.length-1]);setHistory(h=>h.slice(0,-1))};
- const redo=()=>{if(!future.length)return;setHistory(h=>[...h,questions]);setQuestions(future[0]);setFuture(f=>f.slice(1))};
- const exportJSON=()=>{const blob=new Blob([JSON.stringify({title,description,questions},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="surveycanvas-questionnaire.json";a.click();URL.revokeObjectURL(a.href);notify("Questionnaire exported")};
- const visibleQuestions=questions.filter(q=>{if(!q.logic?.questionId)return true;const v=answers[q.logic.questionId];const expected=q.logic.value;return q.logic.operator==="equals"?String(v??"")===expected:q.logic.operator==="not_equals"?String(v??"")!==expected:Array.isArray(v)?v.includes(expected):String(v??"").includes(expected)});
- const completion=Math.round((questions.length?questions.filter(q=>q.required).length/questions.length:0)*100);
- const updateAnswer=(id:string,v:any)=>setAnswers(a=>({...a,[id]:v}));
- const current=visibleQuestions[step];
- const startPreview=()=>{setAnswers({});setStep(0);setPreview(true)};
- const movePreview=(dir:number)=>{setStep(s=>Math.max(0,Math.min(visibleQuestions.length-1,s+dir)))};
- const finishPreview=()=>{const data=visibleQuestions.map(q=>({variable:q.variable,question:q.title,answer:answers[q.id]??null}));const blob=new Blob([JSON.stringify({submittedAt:new Date().toISOString(),responses:data},null,2)],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="surveycanvas-response.json";a.click();setPreview(false);notify("Demo response submitted")};
- return <main className="app-shell">
-  <header className="topbar"><div className="brand"><div className="brand-mark">S</div>SurveyCanvas</div><div className="top-meta">Workspace <span style={{color:"#c3c7d1",margin:"0 7px"}}>/</span> Untitled project</div><div className="top-actions"><span style={{fontSize:10,color:"#929aab",display:"flex",alignItems:"center",gap:5}}><span className="status-dot"/>{saved?"All changes saved":"Saving…"}</span><button className="btn" onClick={undo} title="Undo"><Undo2 size={14}/></button><button className="btn" onClick={redo} title="Redo"><Redo2 size={14}/></button><button className="btn" onClick={exportJSON}><Download size={14}/> Export</button><button className="btn btn-primary" onClick={startPreview}><Eye size={14}/> Preview survey</button></div></header>
-  <div className="workspace">
-   <aside className="sidebar"><div className="side-label">QUESTION LIBRARY</div>{(Object.keys(typeMeta) as QType[]).map(type=>{const Icon=typeMeta[type].icon;return <button key={type} className="question-type" onClick={()=>add(type)}><span className="type-icon"><Icon size={15}/></span>{typeMeta[type].label}<span className="type-hint">+</span></button>})}<div className="sidebar-note"><strong><Sparkles size={13} style={{display:"inline",verticalAlign:"-2px",marginRight:5}}/>Quick tip</strong>Choose a question type to add it to your canvas. Select any question to edit its settings.</div><div style={{marginTop:25}} className="side-label">PROJECT</div><button className="question-type" onClick={exportJSON}><span className="type-icon"><Braces size={15}/></span>Export questionnaire</button><button className="question-type" onClick={startPreview}><span className="type-icon"><Eye size={15}/></span>Test respondent view</button></aside>
-   <section className="center"><div className="builder-heading"><div><div className="eyebrow">QUESTIONNAIRE BUILDER</div><h1 className="builder-title">Build your survey</h1><div className="builder-subtitle">Design the flow. Shape the questions. Preview the experience.</div><div className="progress-wrap"><div className="progress-track"><div className="progress-fill" style={{width:questions.length?Math.min(100,questions.length*12)+"%":"0%"}}/></div><span className="progress-label">{questions.length} questions · {completion}% required</span></div></div><span className="pill">DRAFT</span></div>
-    <div className="survey-intro"><input value={title} onChange={e=>setTitle(e.target.value)} aria-label="Survey title" style={{fontSize:15,fontWeight:750,border:0,outline:0,width:"100%",color:"#202a3c",marginBottom:6}}/><textarea value={description} onChange={e=>setDescription(e.target.value)} aria-label="Survey description" rows={1} style={{fontSize:11,color:"#9299a8",border:0,outline:0,width:"100%",resize:"vertical"}}/></div>
-    {questions.length===0?<div className="empty-state"><div className="empty-icon"><ClipboardList size={22}/></div><strong>Your questionnaire starts here</strong><p>Add your first question from the library, or choose a template to get started.</p><button className="btn btn-primary" onClick={()=>add("single")}><Plus size={14}/> Add first question</button></div>:questions.map((q,i)=><article key={q.id} className={"question-card "+(selected===q.id?"selected ":"")+(dragOver===q.id?"drag-over":"")} onClick={()=>setSelected(q.id)} draggable onDragStart={()=>setDragId(q.id)} onDragOver={e=>{e.preventDefault();setDragOver(q.id)}} onDrop={e=>{e.preventDefault();reorder(q.id)}} onDragEnd={()=>{setDragId(null);setDragOver(null)}}><div className="q-top"><span className="drag-handle"><GripVertical size={15}/></span><span className="q-number">Q{i+1}</span><span className="q-kind">{typeMeta[q.type].label}</span>{q.required&&<span className="pill">REQUIRED</span>}<div className="q-actions"><button className="icon-btn" title="Duplicate" onClick={e=>{e.stopPropagation();duplicate(q)}}><Copy size={13}/></button><button className="icon-btn" title="Delete" onClick={e=>{e.stopPropagation();remove(q.id)}}><Trash2 size={13}/></button><button className="icon-btn" title="More" onClick={e=>{e.stopPropagation();setSelected(q.id)}}><MoreHorizontal size={15}/></button></div></div><h3 className="q-title">{q.title}</h3>{q.description&&<p className="q-description">{q.description}</p>}<div className="choice-preview">{q.type==="single"||q.type==="multi"||q.type==="dropdown"?q.options.map((o,j)=><div className="choice-line" key={j}>{q.type==="single"?<span className="fake-radio"/>:<span className="fake-check"/>}{o}</div>):q.type==="rating"?<div style={{display:"flex",gap:8,color:"#b6b9c8",fontSize:18}}>{Array.from({length:q.max||5},(_,j)=><span key={j}>☆</span>)}</div>:q.type==="matrix"?<div style={{fontSize:10,color:"#8b93a4"}}>{q.options.join("  ·  ")}<br/><br/>○ ○ ○ ○ ○</div>:<div className="fake-input">{q.type==="number"?"Enter a number":"Type your answer..."}</div>}</div></article>)}
-    <div className="drop-zone"><strong><Plus size={14} style={{display:"inline",verticalAlign:"-3px"}}/> Add another question</strong>Choose a question type from the library or <button onClick={()=>add("single")} style={{border:0,background:"transparent",color:"#6558e8",fontSize:11,fontWeight:700}}>add a question</button></div>
-   </section>
-   <aside className="sidebar sidebar-right"><div style={{display:"flex",gap:5,borderBottom:"1px solid #edf0f4",paddingBottom:12,marginBottom:18}}><button className={"btn "+(tab==="settings"?"btn-primary":"")} onClick={()=>setTab("settings")}><Settings2 size={13}/> Settings</button><button className={"btn "+(tab==="logic"?"btn-primary":"")} onClick={()=>setTab("logic")}><GitBranch size={13}/> Logic</button></div>
-    {!active?<div><h3 className="right-title">Survey settings</h3><p className="right-sub">Select a question to edit its properties.</p><div className="field"><label>QUESTIONNAIRE TITLE</label><input value={title} onChange={e=>setTitle(e.target.value)}/></div><div className="field"><label>INTRODUCTION</label><textarea value={description} onChange={e=>setDescription(e.target.value)}/></div><div className="sidebar-note">Your work is saved automatically in this browser.</div></div>:tab==="settings"?<><h3 className="right-title">Question settings</h3><p className="right-sub">Configure the selected question.</p><div className="field"><label>QUESTION TEXT</label><textarea value={active.title} onChange={e=>patch({title:e.target.value})}/></div><div className="field"><label>DESCRIPTION / HINT</label><textarea value={active.description} onChange={e=>patch({description:e.target.value})} placeholder="Add helpful context…"/></div><div className="field"><label>VARIABLE NAME</label><input value={active.variable} onChange={e=>patch({variable:e.target.value.replace(/[^a-zA-Z0-9_]/g,"")})}/><div className="field-hint">Used as the response field in exported data.</div></div>{["single","multi","dropdown","matrix"].includes(active.type)&&<div className="field"><label>ANSWER OPTIONS</label>{active.options.map((o,i)=><div className="option-edit" key={i}><input value={o} onChange={e=>patch({options:active.options.map((v,j)=>j===i?e.target.value:v)})}/><button onClick={()=>patch({options:active.options.filter((_,j)=>j!==i)})}><X size={13}/></button></div>)}<button className="add-option" onClick={()=>patch({options:[...active.options,"New option"]})}><Plus size={12} style={{display:"inline",verticalAlign:"-2px"}}/> Add option</button></div>}{active.type==="rating"&&<div className="field"><label>RATING SCALE</label><select value={active.max||5} onChange={e=>patch({max:Number(e.target.value)})}><option value="3">1 to 3</option><option value="5">1 to 5</option><option value="7">1 to 7</option><option value="10">1 to 10</option></select></div>}{active.type==="number"&&<div className="field"><label>VALIDATION RANGE</label><div className="logic-row"><input type="number" placeholder="Min" value={active.min??""} onChange={e=>patch({min:e.target.value===""?undefined:Number(e.target.value)})}/><input type="number" placeholder="Max" value={active.max??""} onChange={e=>patch({max:e.target.value===""?undefined:Number(e.target.value)})}/></div></div>}<div className="toggle-row"><span>Require an answer</span><button className={"switch "+(active.required?"on":"")} onClick={()=>patch({required:!active.required})}><span/></button></div><div style={{marginTop:18}}><button className="btn" style={{width:"100%",justifyContent:"center"}} onClick={()=>duplicate(active)}><Copy size={13}/> Duplicate question</button></div></>:<><h3 className="right-title">Display logic</h3><p className="right-sub">Show this question only when a condition is met.</p><div className="field"><label>SHOW THIS QUESTION WHEN</label><select value={active.logic?.questionId||""} onChange={e=>patch({logic:e.target.value?{questionId:e.target.value,operator:"equals",value:""}:undefined})}><option value="">Always show</option>{questions.filter(q=>q.id!==active.id&&["single","dropdown","text","number"].includes(q.type)).map(q=><option key={q.id} value={q.id}>{q.variable} — {q.title.slice(0,32)}</option>)}</select></div>{active.logic&&<><div className="field"><label>CONDITION</label><select value={active.logic.operator} onChange={e=>patch({logic:{...active.logic!,operator:e.target.value}})}><option value="equals">Equals</option><option value="not_equals">Does not equal</option><option value="contains">Contains</option></select></div><div className="field"><label>EXPECTED ANSWER</label><input value={active.logic.value} onChange={e=>patch({logic:{...active.logic!,value:e.target.value}})} placeholder="Enter answer value"/></div><div className="sidebar-note">During preview, this question appears only when the selected condition matches the previous response.</div></>}</>}
-   </aside>
-  </div>
-  {preview&&<div className="preview-overlay"><div className="preview-window"><div className="preview-head"><div style={{display:"flex",alignItems:"center",gap:9}}><div className="brand-mark" style={{width:27,height:27,fontSize:12}}>S</div><div><div style={{fontSize:12,fontWeight:750}}>Respondent preview</div><div style={{fontSize:9,color:"#929aab"}}>A live preview of your questionnaire</div></div></div><button className="icon-btn" onClick={()=>setPreview(false)}><X size={18}/></button></div><div className="preview-body"><div className="eyebrow">SURVEY PREVIEW</div><h2>{title}</h2><p>{description}</p><div style={{height:5,background:"#e9eaf1",borderRadius:5,margin:"20px 0"}}><div style={{height:5,background:"#6b60e8",borderRadius:5,width:visibleQuestions.length?((step+1)/visibleQuestions.length*100)+"%":"0%"}}/></div>{current?<><div style={{fontSize:10,color:"#929aab",marginBottom:9}}>QUESTION {step+1} OF {visibleQuestions.length}</div><div className="preview-question"><label>{current.title}{current.required&&<span style={{color:"#e35d73"}}> *</span>}</label>{current.description&&<p style={{fontSize:11,color:"#8b93a4",marginTop:-5}}>{current.description}</p>}{current.type==="single"||current.type==="multi"?current.options.map((o,i)=><label className="preview-choice" key={i}><input type={current.type==="single"?"radio":"checkbox"} name={current.id} checked={current.type==="single"?answers[current.id]===o:(answers[current.id]||[]).includes(o)} onChange={e=>updateAnswer(current.id,current.type==="single"?o:e.target.checked?[...(answers[current.id]||[]),o]:(answers[current.id]||[]).filter((v:string)=>v!==o))}/>{o}</label>):current.type==="dropdown"?<select value={answers[current.id]||""} onChange={e=>updateAnswer(current.id,e.target.value)}><option value="">Select an option</option>{current.options.map(o=><option key={o}>{o}</option>)}</select>:current.type==="rating"?<div style={{display:"flex",gap:10}}>{Array.from({length:current.max||5},(_,i)=><button key={i} onClick={()=>updateAnswer(current.id,i+1)} style={{border:"1px solid #e4e7ef",background:answers[current.id]===i+1?"#efedff":"white",borderRadius:8,padding:"8px 12px",color:answers[current.id]===i+1?"#6558e8":"#697387"}}>{i+1}</button>)}</div>:current.type==="number"?<input type="number" min={current.min} max={current.max} value={answers[current.id]??""} onChange={e=>updateAnswer(current.id,e.target.value)}/>:current.type==="matrix"?current.options.map((o,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,padding:"8px 0",borderTop:"1px solid #f0f1f5"}}>{o}<select style={{width:100}} value={answers[current.id]?.[o]||""} onChange={e=>updateAnswer(current.id,{...(answers[current.id]||{}),[o]:e.target.value})}><option value="">Choose</option>{[1,2,3,4,5].map(n=><option key={n}>{n}</option>)}</select></div>):<textarea rows={current.type==="textarea"?4:1} placeholder="Type your answer…" value={answers[current.id]||""} onChange={e=>updateAnswer(current.id,e.target.value)}/>}</div></>:<div className="empty-state">No questions to display.</div>}<div className="preview-footer"><button className="btn" onClick={()=>step===0?setPreview(false):movePreview(-1)}><ArrowLeft size={13}/> Back</button>{step<visibleQuestions.length-1?<button className="btn btn-primary" onClick={()=>{if(current?.required&&!answers[current.id]){notify("Please answer this required question");return}movePreview(1)}}>Next <ArrowRight size={13}/></button>:<button className="btn btn-primary" onClick={()=>{if(current?.required&&!answers[current.id]){notify("Please answer this required question");return}finishPreview()}}>Submit response <Check size={13}/></button>}</div><div style={{textAlign:"center",fontSize:9,color:"#a0a7b4",marginTop:20}}>Powered by SurveyCanvas · Preview mode</div></div></div></div>}
-  {toast&&<div className="toast">{toast}</div>}
- </main>
+const newQuestion = (type: QType, n: number): Question => ({
+  id: "q_" + Math.random().toString(36).slice(2, 9), type,
+  title: ({ single: "Choose one option", multi: "Select all that apply", text: "Enter your answer", textarea: "Share your thoughts", dropdown: "Choose an option", number: "Enter a number", rating: "Rate your experience", matrix: "Rate each statement" } as Record<QType, string>)[type],
+  description: "", required: false, options: type === "matrix" ? ["Statement 1", "Statement 2", "Statement 3"] : ["Option 1", "Option 2", "Option 3"],
+  variable: "Q" + n, min: 1, max: 5
+});
+const initialQuestions: Question[] = [
+  { ...newQuestion("single", 1), id: "q1", title: "Which of the following best describes your role?", description: "Select the option that most closely matches your current role.", options: ["Research / Insights", "Survey Programmer", "Project Manager", "Other"], required: true },
+  { ...newQuestion("multi", 2), id: "q2", title: "Which tools do you use regularly?", description: "Select all that apply.", options: ["Decipher", "Metaform", "Excel", "Python", "Other"] },
+  { ...newQuestion("rating", 3), id: "q3", title: "How confident are you in your current workflow?", description: "1 = Not confident · 5 = Very confident", required: true }
+];
+function makeInitial() {
+  const nodes: FlowNode[] = [
+    { id: "start", type: "flowCard", position: { x: 40, y: 245 }, data: { kind: "start", label: "Survey start" }, draggable: false },
+    ...initialQuestions.map((q, i) => ({ id: q.id, type: "flowCard", position: { x: 350, y: 65 + i * 185 }, data: { kind: "question" as const, question: q } })),
+    { id: "end", type: "flowCard", position: { x: 790, y: 245 }, data: { kind: "end", label: "Survey complete" }, draggable: false }
+  ];
+  const edges: Edge[] = [
+    { id: "e-start-q1", source: "start", target: "q1", animated: true, style: { stroke: "#8b82ee", strokeWidth: 2 } },
+    { id: "e-q1-q2", source: "q1", target: "q2", style: { stroke: "#aeb4c4", strokeWidth: 1.7 } },
+    { id: "e-q2-q3", source: "q2", target: "q3", style: { stroke: "#aeb4c4", strokeWidth: 1.7 } },
+    { id: "e-q3-end", source: "q3", target: "end", style: { stroke: "#aeb4c4", strokeWidth: 1.7 } }
+  ];
+  return { nodes, edges };
+}
+function FlowCard({ data, selected }: NodeProps<FlowData>) {
+  if (data.kind === "start" || data.kind === "end") return <div className={"flow-terminal " + data.kind}>
+    {data.kind === "start" ? <ArrowRight size={15}/> : <Check size={15}/>}
+    <span><b>{data.label}</b><small>{data.kind === "start" ? "Entry point" : "End of questionnaire"}</small></span>
+    {data.kind === "start" && <Handle type="source" position={Position.Right}/>}
+    {data.kind === "end" && <Handle type="target" position={Position.Left}/>}
+  </div>;
+  const q = data.question!;
+  const Icon = meta[q.type].icon;
+  return <div className={"flow-question " + (selected ? "is-selected" : "")}>
+    <Handle type="target" position={Position.Left}/>
+    <div className="flow-node-top"><span className="flow-node-icon"><Icon size={14}/></span><span>{q.variable || "Question"}</span><span className="flow-node-kind">{meta[q.type].label}</span></div>
+    <div className="flow-node-title">{q.title || "Untitled question"}</div>
+    <div className="flow-node-bottom"><span>{q.required ? <><ShieldCheck size={11}/> Required</> : "Optional"}</span><span>{q.options.length} {q.type === "matrix" ? "rows" : "options"}</span></div>
+    <Handle type="source" position={Position.Right}/>
+  </div>;
+}
+const nodeTypes = { flowCard: FlowCard };
+const edgeStyle = { stroke: "#aeb4c4", strokeWidth: 1.7 };
+export default function Home() {
+  const initial = useMemo(makeInitial, []);
+  const [nodes, setNodes, onNodesChange] = useNodesState<FlowData>(initial.nodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges);
+  const [selected, setSelected] = useState("q1");
+  const [tab, setTab] = useState<"settings" | "logic">("settings");
+  const [surveyTitle, setSurveyTitle] = useState("Customer Experience Survey");
+  const [surveyDescription, setSurveyDescription] = useState("We'd love to hear your thoughts. This survey takes about 3 minutes.");
+  const [saved, setSaved] = useState(true);
+  const [toast, setToast] = useState("");
+  const [preview, setPreview] = useState(false);
+  const [answers, setAnswers] = useState<Record<string, any>>({});
+  const [previewStep, setPreviewStep] = useState(0);
+  const [branchSource, setBranchSource] = useState("");
+  const [branchLabel, setBranchLabel] = useState("If answer is Yes");
+  const questions = nodes.filter(n => n.data.kind === "question");
+  const activeNode = nodes.find(n => n.id === selected && n.data.kind === "question");
+  const active = activeNode?.data.question;
+  const notify = (s: string) => { setToast(s); window.setTimeout(() => setToast(""), 2200); };
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("surveycanvas-flow");
+      if (!raw) return;
+      const p = JSON.parse(raw);
+      if (Array.isArray(p.nodes) && Array.isArray(p.edges)) { setNodes(p.nodes); setEdges(p.edges); setSelected(p.nodes.find((n: FlowNode) => n.data.kind === "question")?.id || ""); }
+      if (p.title) setSurveyTitle(p.title);
+      if (p.description) setSurveyDescription(p.description);
+    } catch {}
+  }, [setEdges, setNodes]);
+  useEffect(() => {
+    setSaved(false);
+    const t = window.setTimeout(() => {
+      try { localStorage.setItem("surveycanvas-flow", JSON.stringify({ nodes, edges, title: surveyTitle, description: surveyDescription })); setSaved(true); } catch {}
+    }, 450);
+    return () => window.clearTimeout(t);
+  }, [nodes, edges, surveyTitle, surveyDescription]);
+  const onConnect = useCallback((connection: Connection) => setEdges(es => addEdge({ ...connection, id: "edge_" + Math.random().toString(36).slice(2, 9), type: "smoothstep", label: "Next", labelStyle: { fill: "#687187", fontSize: 10 }, labelBgStyle: { fill: "#fff", fillOpacity: 1 }, style: edgeStyle }, es)), [setEdges]);
+  const patchQuestion = (patch: Partial<Question>) => {
+    if (!active) return;
+    setNodes(ns => ns.map(n => n.id === selected && n.data.question ? { ...n, data: { ...n.data, question: { ...n.data.question, ...patch } } } : n));
+  };
+  const addQuestion = (type: QType) => {
+    const q = newQuestion(type, questions.length + 1);
+    const y = 70 + questions.length * 185;
+    const node: FlowNode = { id: q.id, type: "flowCard", position: { x: 350, y }, data: { kind: "question", question: q } };
+    const endEdge = edges.find(e => e.target === "end");
+    setNodes(ns => ns.filter(n => n.id !== "end").concat(node, ns.find(n => n.id === "end")!));
+    setEdges(es => {
+      const base = es.filter(e => e.id !== endEdge?.id);
+      const previous = endEdge?.source || "start";
+      return [...base, { id: "edge_" + q.id, source: previous, target: q.id, type: "smoothstep", style: edgeStyle }, { id: "edge_" + q.id + "_end", source: q.id, target: "end", type: "smoothstep", style: edgeStyle }];
+    });
+    setSelected(q.id); setTab("settings"); notify("Question added to flow");
+  };
+  const deleteSelected = () => {
+    if (!active) return;
+    const incoming = edges.find(e => e.target === selected && e.source !== "start");
+    const outgoing = edges.find(e => e.source === selected && e.target !== "end");
+    setNodes(ns => ns.filter(n => n.id !== selected));
+    setEdges(es => {
+      const next = es.filter(e => e.source !== selected && e.target !== selected);
+      if (incoming && outgoing) next.push({ id: "edge_" + incoming.source + "_" + outgoing.target, source: incoming.source, target: outgoing.target, type: "smoothstep", style: edgeStyle });
+      return next;
+    });
+    setSelected(""); notify("Question removed");
+  };
+  const addBranch = () => {
+    if (!active || !branchSource || branchSource === selected) return;
+    setEdges(es => [...es.filter(e => !(e.source === branchSource && e.target === selected && e.label)), {
+      id: "branch_" + branchSource + "_" + selected + "_" + Date.now(), source: branchSource, target: selected, type: "smoothstep",
+      label: branchLabel || "Conditional path", labelStyle: { fill: "#6258d7", fontSize: 10, fontWeight: 600 },
+      labelBgStyle: { fill: "#f2f0ff", fillOpacity: 1 }, style: { stroke: "#7569e8", strokeWidth: 2, strokeDasharray: "5 4" }
+    }]);
+    notify("Branch connection added");
+  };
+  const exportJSON = () => {
+    const payload = { title: surveyTitle, description: surveyDescription, nodes, edges, questions: questions.map(n => n.data.question) };
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" })); a.download = "surveycanvas-flow.json"; a.click(); URL.revokeObjectURL(a.href); notify("Survey flow exported");
+  };
+  const previewQuestions = questions.map(n => n.data.question!).filter(Boolean);
+  const current = previewQuestions[previewStep];
+  const submitPreview = () => {
+    const result = previewQuestions.map(q => ({ variable: q.variable, question: q.title, answer: answers[q.id] ?? null }));
+    const a = document.createElement("a"); a.href = URL.createObjectURL(new Blob([JSON.stringify({ title: surveyTitle, responses: result }, null, 2)], { type: "application/json" })); a.download = "surveycanvas-test-response.json"; a.click(); setPreview(false); notify("Test response exported");
+  };
+  return <main className="app-shell flow-app">
+    <header className="topbar">
+      <div className="brand"><div className="brand-mark">S</div>SurveyCanvas</div>
+      <div className="top-meta">Projects <span>/</span> {surveyTitle}</div>
+      <div className="top-actions"><span className="save-indicator"><i className={saved ? "saved" : ""}/>{saved ? "All changes saved" : "Saving…"}</span><button className="btn" onClick={exportJSON}><Download size={14}/> Export flow</button><button className="btn btn-primary" onClick={() => { setPreview(true); setPreviewStep(0); setAnswers({}); }}><Eye size={14}/> Test survey</button></div>
+    </header>
+    <div className="flow-workspace">
+      <aside className="flow-library">
+        <div className="side-label">BUILD YOUR SURVEY</div>
+        <div className="library-section-title">QUESTION NODES</div>
+        {(Object.keys(meta) as QType[]).map(type => { const Icon = meta[type].icon; return <button className="library-item" key={type} onClick={() => addQuestion(type)}><span><Icon size={15}/></span>{meta[type].label}<Plus size={13} className="library-plus"/></button>; })}
+        <div className="library-divider"/>
+        <div className="library-section-title">FLOW ELEMENTS</div>
+        <div className="flow-help"><GitBranch size={15}/><div><b>Branching logic</b><p>Select a question, open Logic, and add a conditional connection to another node.</p></div></div>
+        <div className="flow-help"><Layers3 size={15}/><div><b>Arrange your flow</b><p>Drag nodes to organize the respondent journey. Connect handles to create paths.</p></div></div>
+        <div className="library-footer"><span className="live-dot"/> Autosave enabled <small>Stored in this browser</small></div>
+      </aside>
+      <section className="canvas-area">
+        <div className="canvas-toolbar"><div><div className="canvas-kicker">VISUAL PROGRAMMING WORKSPACE</div><h1>{surveyTitle}</h1><p>{questions.length} questions <span>·</span> {edges.length} connections <span>·</span> Drag nodes to arrange your flow</p></div><div className="canvas-toolbar-actions"><button className="btn" onClick={() => { const { nodes: n, edges: e } = makeInitial(); setNodes(n); setEdges(e); setSelected("q1"); notify("Starter flow restored"); }}><ClipboardList size={13}/> Reset sample</button><button className="btn" onClick={exportJSON}><Braces size={13}/> JSON</button></div></div>
+        <div className="flow-canvas">
+          <div className="canvas-hint"><span className="hint-dot"/> CONNECTED SURVEY FLOW <span>·</span> Select a node to edit</div>
+          <ReactFlow nodes={nodes} edges={edges} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={onConnect} onNodeClick={(_, n) => { if (n.data.kind === "question") setSelected(n.id); }} nodeTypes={nodeTypes} fitView fitViewOptions={{ padding: 0.25 }} minZoom={0.25} maxZoom={1.5} defaultEdgeOptions={{ type: "smoothstep", style: edgeStyle }} deleteKeyCode={["Backspace", "Delete"]} proOptions={{ hideAttribution: true }}>
+            <Background color="#e5e8f0" gap={22} size={1}/>
+            <MiniMap nodeColor={n => n.data.kind === "start" ? "#20ad83" : n.data.kind === "end" ? "#aab1c0" : "#776bea"} maskColor="rgba(246,247,251,.72)" />
+            <Controls showInteractive={false}/>
+          </ReactFlow>
+          <div className="canvas-legend"><span><i className="legend-solid"/> Default path</span><span><i className="legend-dashed"/> Conditional branch</span></div>
+        </div>
+        <div className="canvas-status"><span><GitBranch size={12}/> Visual flow editor</span><span>Drag from a node handle to create a connection</span></div>
+      </section>
+      <aside className="flow-inspector">
+        <div className="inspector-tabs"><button className={tab === "settings" ? "active" : ""} onClick={() => setTab("settings")}><Settings2 size={13}/> Question</button><button className={tab === "logic" ? "active" : ""} onClick={() => setTab("logic")}><GitBranch size={13}/> Logic</button></div>
+        {!active ? <div className="inspector-empty"><div><Sparkles size={20}/></div><b>Select a question node</b><p>Click any question on the canvas to edit its wording, options, validation and branching.</p></div> : tab === "settings" ? <>
+          <div className="inspector-heading"><span className="inspector-overline">SELECTED NODE</span><h2>{active.variable}</h2><p>{meta[active.type].label}</p></div>
+          <div className="inspector-field"><label>QUESTION TEXT</label><textarea rows={3} value={active.title} onChange={e => patchQuestion({ title: e.target.value })}/></div>
+          <div className="inspector-field"><label>DESCRIPTION / HINT</label><textarea rows={2} value={active.description} onChange={e => patchQuestion({ description: e.target.value })} placeholder="Add context for respondents…"/></div>
+          <div className="inspector-field"><label>VARIABLE NAME</label><input value={active.variable} onChange={e => patchQuestion({ variable: e.target.value.replace(/[^a-zA-Z0-9_]/g, "") })}/></div>
+          {["single", "multi", "dropdown", "matrix"].includes(active.type) && <div className="inspector-field"><label>{active.type === "matrix" ? "MATRIX ROWS" : "ANSWER OPTIONS"}</label>{active.options.map((option, i) => <div className="option-row" key={i}><input value={option} onChange={e => patchQuestion({ options: active.options.map((v, j) => j === i ? e.target.value : v) })}/><button onClick={() => patchQuestion({ options: active.options.filter((_, j) => j !== i) })}><X size={13}/></button></div>)}<button className="add-option" onClick={() => patchQuestion({ options: [...active.options, "New option"] })}><Plus size={12}/> Add option</button></div>}
+          {active.type === "rating" && <div className="inspector-field"><label>RATING SCALE</label><select value={active.max || 5} onChange={e => patchQuestion({ max: Number(e.target.value) })}><option value="3">1 to 3</option><option value="5">1 to 5</option><option value="7">1 to 7</option><option value="10">1 to 10</option></select></div>}
+          {active.type === "number" && <div className="inspector-field"><label>VALIDATION RANGE</label><div className="range-row"><input type="number" placeholder="Minimum" value={active.min ?? ""} onChange={e => patchQuestion({ min: e.target.value === "" ? undefined : Number(e.target.value) })}/><input type="number" placeholder="Maximum" value={active.max ?? ""} onChange={e => patchQuestion({ max: e.target.value === "" ? undefined : Number(e.target.value) })}/></div></div>}
+          <div className="required-row"><span><b>Required question</b><small>Respondents must answer this</small></span><button className={"toggle " + (active.required ? "on" : "")} onClick={() => patchQuestion({ required: !active.required })}><i/></button></div>
+          <button className="delete-node" onClick={deleteSelected}><Trash2 size={13}/> Delete question node</button>
+        </> : <>
+          <div className="inspector-heading"><span className="inspector-overline">ROUTING & CONDITIONS</span><h2>Branching logic</h2><p>Connect an answer path to this question.</p></div>
+          <div className="logic-callout"><GitBranch size={15}/><span>Conditional paths appear as dashed purple connections on the canvas.</span></div>
+          <div className="inspector-field"><label>FROM QUESTION</label><select value={branchSource} onChange={e => setBranchSource(e.target.value)}><option value="">Choose source node…</option>{questions.filter(n => n.id !== selected).map(n => <option key={n.id} value={n.id}>{n.data.question?.variable} — {n.data.question?.title.slice(0, 30)}</option>)}</select></div>
+          <div className="inspector-field"><label>CONDITION LABEL</label><input value={branchLabel} onChange={e => setBranchLabel(e.target.value)} placeholder="e.g. If answer is Yes"/></div>
+          <button className="btn btn-primary branch-button" onClick={addBranch} disabled={!branchSource}><GitBranch size={13}/> Add conditional connection</button>
+          <div className="logic-note"><b>More precise routing</b><p>Use a clear condition label to document which answer should follow this path. You can also draw connections directly between node handles.</p></div>
+          <div className="inspector-field"><label>CONNECTIONS TO THIS NODE</label>{edges.filter(e => e.target === selected).length ? edges.filter(e => e.target === selected).map(e => <div className="connection-item" key={e.id}><span className={String(e.id).startsWith("branch") ? "branch-mark" : "default-mark"}/><span>{nodes.find(n => n.id === e.source)?.data.question?.variable || "Survey start"} <small>{String(e.label || "Default path")}</small></span><button onClick={() => setEdges(es => es.filter(x => x.id !== e.id))}><X size={12}/></button></div>) : <p className="no-connections">No incoming connections yet.</p>}</div>
+        </>}
+      </aside>
+    </div>
+    {preview && <div className="preview-overlay"><div className="preview-window"><div className="preview-head"><div><b>Respondent test</b><small>Preview the questionnaire experience</small></div><button className="close-preview" onClick={() => setPreview(false)}><X size={17}/></button></div><div className="preview-body"><div className="preview-kicker">SURVEY PREVIEW</div><h2>{surveyTitle}</h2><p>{surveyDescription}</p><div className="preview-progress"><i style={{ width: previewQuestions.length ? ((previewStep + 1) / previewQuestions.length * 100) + "%" : "0%" }}/></div>{current ? <><small className="preview-count">QUESTION {previewStep + 1} OF {previewQuestions.length}</small><h3>{current.title}{current.required && <em> *</em>}</h3>{current.description && <p>{current.description}</p>}{["single", "multi"].includes(current.type) ? current.options.map(o => <label className="respondent-option" key={o}><input type={current.type === "single" ? "radio" : "checkbox"} name={current.id} checked={current.type === "single" ? answers[current.id] === o : (answers[current.id] || []).includes(o)} onChange={e => setAnswers(a => ({ ...a, [current.id]: current.type === "single" ? o : e.target.checked ? [...(a[current.id] || []), o] : (a[current.id] || []).filter((v: string) => v !== o) }))}/>{o}</label>) : current.type === "dropdown" ? <select value={answers[current.id] || ""} onChange={e => setAnswers(a => ({ ...a, [current.id]: e.target.value }))}><option value="">Select an answer</option>{current.options.map(o => <option key={o}>{o}</option>)}</select> : current.type === "rating" ? <div className="rating-answers">{Array.from({ length: current.max || 5 }, (_, i) => <button className={answers[current.id] === i + 1 ? "chosen" : ""} key={i} onClick={() => setAnswers(a => ({ ...a, [current.id]: i + 1 }))}>{i + 1}</button>)}</div> : current.type === "matrix" ? current.options.map(o => <div className="matrix-answer" key={o}>{o}<select value={answers[current.id]?.[o] || ""} onChange={e => setAnswers(a => ({ ...a, [current.id]: { ...(a[current.id] || {}), [o]: e.target.value } }))}><option value="">Rate…</option>{[1,2,3,4,5].map(n => <option key={n}>{n}</option>)}</select></div>) : <textarea rows={current.type === "textarea" ? 4 : 1} placeholder="Your answer…" value={answers[current.id] || ""} onChange={e => setAnswers(a => ({ ...a, [current.id]: e.target.value }))}/>}</> : <p>No questions in this survey yet.</p>}<div className="preview-actions"><button className="btn" onClick={() => previewStep === 0 ? setPreview(false) : setPreviewStep(s => s - 1)}><ArrowLeft size={13}/> Back</button>{previewStep < previewQuestions.length - 1 ? <button className="btn btn-primary" onClick={() => { if (current?.required && !answers[current.id]) { notify("Please answer this required question"); return; } setPreviewStep(s => s + 1); }} >Next <ArrowRight size={13}/></button> : <button className="btn btn-primary" onClick={() => { if (current?.required && !answers[current.id]) { notify("Please answer this required question"); return; } submitPreview(); }}>Submit test <Check size={13}/></button>}</div></div></div></div>}
+    {toast && <div className="toast">{toast}</div>}
+  </main>;
 }
