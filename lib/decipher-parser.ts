@@ -81,17 +81,26 @@ function addMissingDecipherNamespaces(xml: string) {
   if (rootEnd < 0) return xml;
 
   const rootTag = xml.slice(rootStart, rootEnd + 1);
-  const declared = new Set(
-    Array.from(rootTag.matchAll(/\bxmlns:([A-Za-z_][\w.-]*)\s*=/g), match => match[1])
-  );
+  const declared = new Set<string>();
+  const declarationPattern = /\bxmlns:([A-Za-z_][\w.-]*)\s*=/g;
+  let declarationMatch: RegExpExecArray | null;
+  while ((declarationMatch = declarationPattern.exec(rootTag)) !== null) {
+    declared.add(declarationMatch[1]);
+  }
+
   const used = new Set<string>();
 
   // Inspect markup names only; prefixes inside CDATA, scripts, and text are not namespaces.
-  for (const tagMatch of xml.matchAll(/<[^!?][^>]*>/g)) {
+  const tagPattern = /<[^!?][^>]*>/g;
+  let tagMatch: RegExpExecArray | null;
+  while ((tagMatch = tagPattern.exec(xml)) !== null) {
     const tag = tagMatch[0];
     const elementPrefix = /^<\/?([A-Za-z_][\w.-]*):[A-Za-z_][\w.-]*/.exec(tag)?.[1];
     if (elementPrefix) used.add(elementPrefix);
-    for (const attributeMatch of tag.matchAll(/\s([A-Za-z_][\w.-]*):[A-Za-z_][\w.-]*\s*=/g)) {
+
+    const attributePattern = /\s([A-Za-z_][\w.-]*):[A-Za-z_][\w.-]*\s*=/g;
+    let attributeMatch: RegExpExecArray | null;
+    while ((attributeMatch = attributePattern.exec(tag)) !== null) {
       if (attributeMatch[1] !== "xmlns") used.add(attributeMatch[1]);
     }
   }
