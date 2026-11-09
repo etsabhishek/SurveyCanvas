@@ -48,13 +48,13 @@ export function validateSurvey(nodes: SurveyNode[]): ValidationIssue[] {
     });
   }
 
-  for (const [qid, matches] of labels) {
+  labels.forEach((matches, qid) => {
     if (matches.length > 1) matches.forEach(node => issues.push({
       id: "duplicate-" + qid + "-" + node.id, severity: "error", rule: "QID-002",
       title: "Duplicate QID", message: `The label "${qid}" is used by ${matches.length} question elements.`,
       suggestion: "Give each question a unique label and update any dependent references.", nodeId: node.id, qid
     }));
-  }
+  });
 
   for (const node of nodes) {
     if (node.data.kind === "logic" && !node.data.condition) issues.push({
