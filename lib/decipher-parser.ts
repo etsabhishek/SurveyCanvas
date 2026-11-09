@@ -33,7 +33,7 @@ const IGNORE_TAGS = new Set([
 ]);
 
 function clean(value: string | null | undefined) {
-  return (value || "").replace(/\\s+/g, " ").trim();
+  return (value || "").replace(/\s+/g, " ").trim();
 }
 function textOf(el: Element) {
   const title = Array.from(el.children).find(c => c.tagName.toLowerCase() === "title");
@@ -61,7 +61,7 @@ function isSemantic(el: Element) {
 function addMissingDecipherNamespaces(xml: string) {
   // Some Decipher exports use proprietary attribute prefixes without including
   // xmlns declarations. Browsers reject those documents before we can inspect them.
-  const rootMatch = /<([A-Za-z_][\\w:.-]*)(?=[\\s/>])/.exec(xml);
+  const rootMatch = /<([A-Za-z_][\w:.-]*)(?=[\s/>])/.exec(xml);
   if (!rootMatch || rootMatch.index === undefined) return xml;
 
   const rootStart = rootMatch.index;
@@ -82,16 +82,16 @@ function addMissingDecipherNamespaces(xml: string) {
 
   const rootTag = xml.slice(rootStart, rootEnd + 1);
   const declared = new Set(
-    Array.from(rootTag.matchAll(/\\bxmlns:([A-Za-z_][\\w.-]*)\\s*=/g), match => match[1])
+    Array.from(rootTag.matchAll(/\bxmlns:([A-Za-z_][\w.-]*)\s*=/g), match => match[1])
   );
   const used = new Set<string>();
 
   // Inspect markup names only; prefixes inside CDATA, scripts, and text are not namespaces.
   for (const tagMatch of xml.matchAll(/<[^!?][^>]*>/g)) {
     const tag = tagMatch[0];
-    const elementPrefix = /^<\\/?([A-Za-z_][\\w.-]*):[A-Za-z_][\\w.-]*/.exec(tag)?.[1];
+    const elementPrefix = /^<\/?([A-Za-z_][\w.-]*):[A-Za-z_][\w.-]*/.exec(tag)?.[1];
     if (elementPrefix) used.add(elementPrefix);
-    for (const attributeMatch of tag.matchAll(/\\s([A-Za-z_][\\w.-]*):[A-Za-z_][\\w.-]*\\s*=/g)) {
+    for (const attributeMatch of tag.matchAll(/\s([A-Za-z_][\w.-]*):[A-Za-z_][\w.-]*\s*=/g)) {
       if (attributeMatch[1] !== "xmlns") used.add(attributeMatch[1]);
     }
   }
@@ -108,17 +108,17 @@ function addMissingDecipherNamespaces(xml: string) {
 export function parseDecipherXml(xml: string): { nodes: SurveyNode[]; edges: Edge[]; title: string; summary: Record<string, number>; warnings: string[] } {
   if (/<!DOCTYPE/i.test(xml) || /<!ENTITY/i.test(xml)) throw new Error("XML document types and custom entities are not accepted.");
   // Clipboard content can include a UTF-8 BOM; remove it before XML parsing.
-  const normalizedXml = addMissingDecipherNamespaces(xml.replace(/^\\uFEFF/, "").trim());
+  const normalizedXml = addMissingDecipherNamespaces(xml.replace(/^\uFEFF/, "").trim());
   if (!normalizedXml) throw new Error("The XML input is empty. Paste the complete Decipher XML document.");
   const doc = new DOMParser().parseFromString(normalizedXml, "application/xml");
   const parseError = doc.getElementsByTagName("parsererror")[0] ||
     (doc.documentElement?.localName.toLowerCase() === "parsererror" ? doc.documentElement : null);
   if (parseError) {
     const diagnostic = clean(parseError.textContent || "");
-    const location = diagnostic.match(/(?:line|Line)\\s*(\\d+)(?:,|\\s)+(?:column|Column)\\s*(\\d+)/);
+    const location = diagnostic.match(/(?:line|Line)\s*(\d+)(?:,|\s)+(?:column|Column)\s*(\d+)/);
     const detail = diagnostic
-      .replace(/https?:\\/\\/[^\\s]+/g, "")
-      .replace(/\\s+/g, " ")
+      .replace(/https?:\/\/[^\s]+/g, "")
+      .replace(/\s+/g, " ")
       .trim()
       .slice(0, 420);
     const position = location ? ` (line ${location[1]}, column ${location[2]})` : "";
