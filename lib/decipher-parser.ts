@@ -60,9 +60,25 @@ function isSemantic(el: Element) {
 
 export function parseDecipherXml(xml: string): { nodes: SurveyNode[]; edges: Edge[]; title: string; summary: Record<string, number>; warnings: string[] } {
   if (/<!DOCTYPE/i.test(xml) || /<!ENTITY/i.test(xml)) throw new Error("XML document types and custom entities are not accepted.");
-  const doc = new DOMParser().parseFromString(xml, "application/xml");
-  const parseError = doc.querySelector("parsererror");
-  if (parseError) throw new Error("This file is not well-formed XML. Check the XML syntax and try again.");
+  // Clipboard content can include a UTF-8 BOM; remove it before XML parsing.
+  const normalizedXml = xml.replace(/^\\uFEFF/, "").trim();
+  if (!normalizedXml) throw new Error("The XML input is empty. Paste the complete Decipher XML document.");
+  const doc = new DOMParser().parseFromString(normalizedXml, "application/xml");
+  const parseError = doc.getElementsByTagName("parsererror")[0] ||
+    (doc.documentElement?.localName.toLowerCase() === "parsererror" ? doc.documentElement : null);
+  if (parseError) {
+    const diagnostic = clean(parseError.textContent || "");
+    const location = diagnostic.match(/(?:line|Line)\\s*(\\d+)(?:,|\\s)+(?:column|Column)\\s*(\\d+)/);
+    const detail = diagnostic
+      .replace(/https?:\\/\\/[^\\s]+/g, "")
+      .replace(/\\s+/g, " ")
+      .trim()
+      .slice(0, 420);
+    const position = location ? ` (line ${location[1]}, column ${location[2]})` : "";
+    throw new Error(
+      "XML parsing failed" + position + (detail ? ": " + detail : ". Check for unescaped &, mismatched tags, or text outside the root element.")
+    );
+  }
   const root = doc.documentElement;
   if (!root) throw new Error("The XML file is empty.");
   const title = clean(root.getAttribute("label")) || clean(root.getAttribute("name")) || clean(Array.from(root.getElementsByTagName("title"))[0]?.textContent) || "Imported survey";
