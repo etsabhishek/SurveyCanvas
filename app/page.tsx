@@ -3,6 +3,7 @@
 import { useCallback, useMemo, useState } from "react";
 import ReactFlow, { Background, Controls, MiniMap, Handle, Position, type NodeProps, type Edge } from "reactflow";
 import { parseDecipherXml, type SurveyNode, type SurveyNodeData } from "@/lib/decipher-parser";
+import { validateSurvey, type ValidationIssue } from "@/lib/survey-validator";
 import { Activity, AlertTriangle, ArrowDownToLine, Braces, CheckCircle2, ChevronRight, Code2, FileCode2, FileUp, GitBranch, Info, Layers3, Search, ShieldCheck, UploadCloud, X } from "lucide-react";
 
 function SurveyCard({ data, selected }: NodeProps<SurveyNodeData>) {
@@ -39,9 +40,13 @@ export default function Home() {
   const [filter, setFilter] = useState("all");
   const [dragging, setDragging] = useState(false);
   const [showSource, setShowSource] = useState(true);
+  const [activeTab, setActiveTab] = useState<"canvas" | "validation">("canvas");
   const [showPaste, setShowPaste] = useState(false);
   const [xmlText, setXmlText] = useState("");
   const selected = nodes.find(n => n.id === selectedId);
+  const validationIssues = useMemo(() => validateSurvey(nodes), [nodes]);
+  const errorCount = validationIssues.filter(i => i.severity === "error").length;
+  const warningCount = validationIssues.filter(i => i.severity === "warning").length;
   const filteredNodes = useMemo(() => nodes.filter(n => {
     const matchesFilter = filter === "all" || n.data.kind === filter;
     const q = query.toLowerCase();
@@ -123,7 +128,8 @@ export default function Home() {
         </div>
         <button className="sc-btn" onClick={() => { setNodes([]); setEdges([]); setFileName(""); setSelectedId(""); setWarnings([]); setError(""); }}><X size={13}/> Close survey</button>
       </div>
-      <div className="sc-workspace">
+      <div className="sc-view-tabs"><button className={activeTab === "canvas" ? "active" : ""} onClick={() => setActiveTab("canvas")}><Layers3 size={13}/> Survey workspace</button><button className={activeTab === "validation" ? "active" : ""} onClick={() => setActiveTab("validation")}><ShieldCheck size={13}/> Validation center <span className={errorCount ? "tab-count has-errors" : "tab-count"}>{validationIssues.length}</span></button><div className="sc-tab-summary"><b>{errorCount}</b> errors <b>{warningCount}</b> warnings · {validationIssues.length} findings</div></div>
+      {activeTab === "validation" ? <section className="sc-validation-view"><div className="sc-validation-heading"><div><span>STATIC XML QUALITY CHECKS</span><h2>Validation center</h2><p>Actionable checks against the imported XML structure. Conditions are flagged for review, not executed.</p></div><div className="sc-validation-score"><b>{validationIssues.length}</b><span>findings</span></div></div><div className="sc-validation-metrics"><div><b>{errorCount}</b><span>Errors</span></div><div><b>{warningCount}</b><span>Warnings</span></div><div><b>{validationIssues.filter(i => i.severity === "info").length}</b><span>Review items</span></div><div><b>{nodes.filter(n => n.data.kind === "question").length}</b><span>Questions checked</span></div></div>{validationIssues.length ? <div className="sc-issue-list">{validationIssues.map(issue => <article className="sc-issue" key={issue.id}><div className={"sc-issue-severity " + issue.severity}>{issue.severity === "error" ? "ERROR" : issue.severity === "warning" ? "WARNING" : "REVIEW"}</div><div className="sc-issue-main"><div className="sc-issue-title"><b>{issue.title}</b><span>{issue.rule}</span></div><p>{issue.message}</p><div className="sc-issue-suggestion"><b>Suggested action</b> {issue.suggestion}</div></div>{issue.nodeId && <button className="sc-issue-jump" onClick={() => { setSelectedId(issue.nodeId!); setActiveTab("canvas"); }}>Inspect element <ChevronRight size={12}/></button>}</article>)}</div> : <div className="sc-validation-clean"><CheckCircle2 size={22}/><b>No static issues detected</b><span>That does not prove runtime routing or all Decipher logic is correct. Continue with platform testing.</span></div>}<div className="sc-validation-note"><Info size={13}/> Scope: duplicate/missing QIDs, missing titles, detectable missing choice options, required-status review and condition review markers. This is a static heuristic scan, not a Decipher runtime interpreter.</div></section> : <div className="sc-workspace">
         <aside className="sc-left-panel">
           <div className="sc-panel-heading">SURVEY EXPLORER <span>{nodes.length}</span></div>
           <div className="sc-search"><Search size={13}/><input placeholder="Find QID, text or logic…" value={query} onChange={e => setQuery(e.target.value)}/></div>
@@ -155,7 +161,7 @@ export default function Home() {
           </div> : <div className="sc-inspector-empty">Select a node on the canvas or in the explorer to inspect its XML attributes and source snippet.</div>}
           {warnings.length > 0 && <div className="sc-warnings"><div><AlertTriangle size={13}/> PARSER NOTES <b>{warnings.length}</b></div>{warnings.slice(0,8).map((w,i) => <p key={i}>{w}</p>)}{warnings.length > 8 && <small>+ {warnings.length - 8} more notes</small>}</div>}
         </aside>
-      </div>
+      </div>}
     </>}
     {showPaste && <div className="sc-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="paste-xml-title">
       <section className="sc-paste-modal">
